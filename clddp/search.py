@@ -177,7 +177,11 @@ def search(
         qid2rpidls.setdefault(rpidl.query_id, [])
         qid2rpidls[rpidl.query_id].append(rpidl)
     merged_rpidls = []
-    for rpidls in tqdm.tqdm(list(qid2rpidls.values()), desc="Merging search results"):
+    for rpidls in tqdm.tqdm(
+        list(qid2rpidls.values()),
+        desc="Merging search results",
+        disable=not is_device_zero(),
+    ):
         rpidl = RetrievedPassageIDList.merge(rpidls=rpidls, topk=topk)
         merged_rpidls.append(rpidl)
     return merged_rpidls
