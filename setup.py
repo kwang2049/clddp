@@ -30,6 +30,6 @@ setup(
         "more_itertools",
         "pytrec_eval",
         "sentence-transformers",
-        "accelerate"
+        "accelerate",
     ],
 )

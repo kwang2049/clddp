@@ -77,6 +77,7 @@ class RetrievalTrainingDataset(Dataset):
 
 
 def run(
+    retriever: Retriever,
     args: RetrievalTrainingArguments,
     train_dataset: Optional[RetrievalTrainingDataset] = None,
     dev_dataset: Optional[RetrievalDataset] = None,
@@ -89,23 +90,6 @@ def run(
         assert dev_dataset is not None
     if args.do_train:
         assert train_dataset is not None
-        # Retriever building:
-        config = RetrieverConfig(
-            query_model_name_or_path=args.query_model_name_or_path,
-            passage_model_name_or_path=args.passage_model_name_or_path,
-            shared_encoder=args.shared_encoder,
-            sep=args.sep,
-            pooling=args.pooling,
-            similarity_function=args.similarity_function,
-            max_length=args.max_length,
-            sim_scale=args.sim_scale,
-        )
-        retriever = Retriever(config)
-        if args.query_prompt is not None:
-            retriever.set_query_prompt(args.query_prompt)
-        if args.passage_prompt is not None:
-            retriever.set_passage_prompt(args.passage_prompt)
-
         # Begin training:
         trainer = RetrievalTrainer(
             model=retriever,
@@ -191,6 +175,25 @@ if __name__ == "__main__":
 
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     args = parse_cli(RetrievalTrainingArguments)
+
+    # Retriever building:
+    config = RetrieverConfig(
+        query_model_name_or_path=args.query_model_name_or_path,
+        passage_model_name_or_path=args.passage_model_name_or_path,
+        shared_encoder=args.shared_encoder,
+        sep=args.sep,
+        pooling=args.pooling,
+        similarity_function=args.similarity_function,
+        max_length=args.max_length,
+        sim_scale=args.sim_scale,
+    )
+    retriever = Retriever(config)
+    if args.query_prompt is not None:
+        retriever.set_query_prompt(args.query_prompt)
+    if args.passage_prompt is not None:
+        retriever.set_passage_prompt(args.passage_prompt)
+
+    # Data loading:
     train_dataset = RetrievalTrainingDataset(
         load_dataset(
             enable=args.do_train,
@@ -208,7 +211,10 @@ if __name__ == "__main__":
         dataloader_name=args.test_dataloader,
         data_name_or_path=args.test_data,
     )
+
+    # Run training:
     run(
+        retriever=retriever,
         args=args,
         train_dataset=train_dataset,
         dev_dataset=dev_dataset,
