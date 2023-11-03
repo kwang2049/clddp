@@ -64,22 +64,22 @@ class RetrievalTrainer(Trainer):
             return None
 
 
-class RetrievalTrainingDataset(Dataset):
-    def __init__(self, train_data: List[JudgedPassage]):
-        self.train_data = train_data
+class RetrievalTrainingData(Dataset):
+    def __init__(self, training_data: List[JudgedPassage]):
+        self.training_data = training_data
 
     def __getitem__(self, item: int):
-        jp = self.train_data[item]
+        jp = self.training_data[item]
         return RetrievalTrainingExample(query=jp.query, passages=[jp.passage])
 
     def __len__(self):
-        return len(self.train_data)
+        return len(self.training_data)
 
 
 def run(
     retriever: Retriever,
     args: RetrievalTrainingArguments,
-    train_dataset: Optional[RetrievalTrainingDataset] = None,
+    training_data: Optional[RetrievalTrainingData] = None,
     dev_dataset: Optional[RetrievalDataset] = None,
     test_dataset: Optional[RetrievalDataset] = None,
 ) -> None:
@@ -89,13 +89,13 @@ def run(
     if args.do_dev:
         assert dev_dataset is not None
     if args.do_train:
-        assert train_dataset is not None
+        assert training_data is not None
         # Begin training:
         trainer = RetrievalTrainer(
             model=retriever,
             args=args,
             data_collator=lambda examples: {"examples": examples},
-            train_dataset=train_dataset,
+            train_dataset=training_data,
             eval_dataset=dev_dataset,
         )
         trainer.control.should_evaluate = True
@@ -194,29 +194,32 @@ if __name__ == "__main__":
         retriever.set_passage_prompt(args.passage_prompt)
 
     # Data loading:
-    train_dataset = RetrievalTrainingDataset(
-        load_dataset(
-            enable=args.do_train,
-            dataloader_name=args.train_dataloader,
-            data_name_or_path=args.train_data,
-        ).judged_passages_train
+    train_dataset = load_dataset(
+        enable=args.do_train,
+        dataloader_name=args.train_dataloader,
+        data_name_or_path=args.train_data,
     )
-    dev_dataset = load_dataset(
-        enable=args.do_dev,
-        dataloader_name=args.dev_dataloader,
-        data_name_or_path=args.dev_data,
-    )
-    test_dataset = load_dataset(
-        enable=args.do_test,
-        dataloader_name=args.test_dataloader,
-        data_name_or_path=args.test_data,
-    )
+    training_data = RetrievalTrainingData(train_dataset.judged_passages_train)
+    dev_dataset = train_dataset
+    if args.dev_data != args.train_data:
+        dev_dataset = load_dataset(
+            enable=args.do_dev,
+            dataloader_name=args.dev_dataloader,
+            data_name_or_path=args.dev_data,
+        )
+    test_dataset = train_dataset
+    if args.test_data != args.train_data:
+        test_dataset = load_dataset(
+            enable=args.do_test,
+            dataloader_name=args.test_dataloader,
+            data_name_or_path=args.test_data,
+        )
 
     # Run training:
     run(
         retriever=retriever,
         args=args,
-        train_dataset=train_dataset,
+        training_data=training_data,
         dev_dataset=dev_dataset,
         test_dataset=test_dataset,
     )
