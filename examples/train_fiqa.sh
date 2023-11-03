@@ -27,6 +27,7 @@ export CLI_ARGS="
 --dev_data=$DATASET_PATH
 --dev_dataloader=beir
 --do_dev=True
+--quick_dev=False
 --test_data=$DATASET_PATH
 --test_dataloader=beir
 --num_train_epochs=1

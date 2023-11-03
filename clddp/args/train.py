@@ -50,7 +50,9 @@ class RetrievalTrainingArguments(
 
     # Evaluation-related:
     do_dev: bool = True  # whether to evaluate on dev during training
+    quick_dev: bool = False  # whether to keep only the labeled passages + sampled passages as the collection for quick dev
     do_test: bool = True
+    quick_test: bool = False  # whether to keep only the labeled passages + sampled passages as the collection for quick test
     metric_for_best_model: str = "ndcg_cut_10"
     dev_split: Split = Split.dev  # Note that some datasets do not have a dev split
     test_split: Split = Split.test

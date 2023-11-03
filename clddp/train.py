@@ -9,7 +9,7 @@ import torch
 import torch.distributed as dist
 from transformers import Trainer
 from torch.utils.data import Dataset
-from clddp.dm import JudgedPassage, RetrievalDataset, RetrievedPassageIDList
+from clddp.dm import JudgedPassage, RetrievalDataset, RetrievedPassageIDList, Split
 from clddp.evaluation import search_and_evaluate
 from clddp.args.train import RetrievalTrainingArguments
 from clddp.retriever import RetrievalTrainingExample, Retriever, RetrieverConfig
@@ -207,12 +207,36 @@ if __name__ == "__main__":
             dataloader_name=args.dev_dataloader,
             data_name_or_path=args.dev_data,
         )
+    if args.quick_dev:
+        assert args.do_dev
+        save_pids_to_fpath = (
+            os.path.join(args.output_dir, "quick_dev_pids.json")
+            if is_device_zero()
+            else None
+        )
+        dev_dataset = dev_dataset.to_quick_version(
+            split=Split.dev,
+            progress_bar=is_device_zero(),
+            save_pids_to_fpath=save_pids_to_fpath,
+        )
     test_dataset = train_dataset
     if args.test_data != args.train_data:
         test_dataset = load_dataset(
             enable=args.do_test,
             dataloader_name=args.test_dataloader,
             data_name_or_path=args.test_data,
+        )
+    if args.quick_test:
+        assert args.do_test
+        save_pids_to_fpath = (
+            os.path.join(args.output_dir, "quick_test_pids.json")
+            if is_device_zero()
+            else None
+        )
+        test_dataset = test_dataset.to_quick_version(
+            split=Split.test,
+            progress_bar=is_device_zero(),
+            save_pids_to_fpath=save_pids_to_fpath,
         )
 
     # Run training:
