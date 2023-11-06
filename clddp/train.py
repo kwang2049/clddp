@@ -13,7 +13,7 @@ from clddp.dm import JudgedPassage, RetrievalDataset, RetrievedPassageIDList, Sp
 from clddp.evaluation import search_and_evaluate
 from clddp.args.train import RetrievalTrainingArguments
 from clddp.retriever import RetrievalTrainingExample, Retriever, RetrieverConfig
-from clddp.utils import is_device_zero, set_logger_format
+from clddp.utils import is_device_zero, set_logger_format, parse_cli
 from clddp.dataloader import load_dataset
 
 
@@ -169,10 +169,7 @@ def run(
             wandb.finish()
 
 
-if __name__ == "__main__":
-    # Example cli: torchrun --nproc_per_node=4 --master_port=29501 -m clddp.train
-    from clddp.utils import parse_cli
-
+def main():
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     args = parse_cli(RetrievalTrainingArguments)
 
@@ -248,3 +245,8 @@ if __name__ == "__main__":
         test_dataset=test_dataset,
     )
     logging.info("Done")
+
+
+if __name__ == "__main__":
+    # Example cli: torchrun --nproc_per_node=4 --master_port=29501 -m clddp.train
+    main()
