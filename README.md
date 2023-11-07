@@ -38,6 +38,7 @@ export CLI_ARGS="
 --fp16=True
 --train_data=$DATASET_PATH
 --train_dataloader=beir
+--num_negatives=0
 --dev_data=$DATASET_PATH
 --dev_dataloader=beir
 --do_dev=True

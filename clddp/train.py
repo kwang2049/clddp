@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import shutil
 from typing import Any, Dict, List, Optional
 import wandb
@@ -65,15 +66,34 @@ class RetrievalTrainer(Trainer):
 
 
 class RetrievalTrainingData(Dataset):
-    def __init__(self, training_data: List[JudgedPassage]):
-        self.training_data = training_data
+    def __init__(self, training_data: List[JudgedPassage], num_negatives: int):
+        self.num_negatives = num_negatives
+        self.qid2positives: Dict[str, List[JudgedPassage]] = {}
+        self.qid2negatives: Dict[str, List[JudgedPassage]] = {}
+        for jpsg in training_data:
+            qid2jpsgs = self.qid2positives if jpsg.judgement else self.qid2negatives
+            qid2jpsgs.setdefault(jpsg.query.query_id, [])
+            qid2jpsgs[jpsg.query.query_id].append(jpsg)
+        self.qids = (
+            list(set(self.qid2positives) & set(self.qid2negatives))
+            if num_negatives
+            else list(self.qid2positives)
+        )
 
     def __getitem__(self, item: int):
-        jp = self.training_data[item]
-        return RetrievalTrainingExample(query=jp.query, passages=[jp.passage])
+        positives = self.qid2positives[self.qids[item]]
+        negatives = self.qid2negatives.get(self.qids[item], [])
+        if len(negatives):
+            self.num_negatives, f"Seems like a bug (qid={self.qids[item]})"
+        random.shuffle(positives)
+        random.shuffle(negatives)
+        positive = positives[0]
+        negatives = [negatives[i % len(negatives)] for i in range(self.num_negatives)]
+        passages = [positive.passage] + [negative.passage for negative in negatives]
+        return RetrievalTrainingExample(query=positive.query, passages=passages)
 
     def __len__(self):
-        return len(self.training_data)
+        return len(self.qids)
 
 
 def run(
@@ -196,7 +216,10 @@ def main():
         dataloader_name=args.train_dataloader,
         data_name_or_path=args.train_data,
     )
-    training_data = RetrievalTrainingData(train_dataset.judged_passages_train)
+    training_data = RetrievalTrainingData(
+        training_data=train_dataset.judged_passages_train,
+        num_negatives=args.num_negatives,
+    )
     dev_dataset = train_dataset
     if args.dev_data != args.train_data:
         dev_dataset = load_dataset(
