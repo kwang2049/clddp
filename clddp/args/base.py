@@ -3,7 +3,7 @@ from dataclasses import asdict, dataclass
 import json
 import logging
 import os
-from typing import Optional, Set, Type
+from typing import List, Optional, Set, Type
 from clddp.utils import get_commit_hash, parse_cli
 from abc import ABC, abstractmethod
 
@@ -17,16 +17,19 @@ class AutoRunNameArgumentsMixIn:
         """Escaped items for building the run_name."""
         return set()
 
+    def get_arguments_from(self) -> List[type]:
+        """Return the classes which the auto_run_name will get the arguments from."""
+        return [self.__class__]
+
     @property
     def auto_run_name(self) -> str:
-        return "/".join(
-            [
-                f"{k}_{getattr(self, k)}"
-                for k in self.__annotations__.keys()
-                if k not in self.escaped_args
-            ]
-            + [f"git_hash_{get_commit_hash()}"]
-        )
+        arguments = [
+            k
+            for from_class in self.get_arguments_from()
+            for k in from_class.__annotations__.keys()
+            if k not in self.escaped_args
+        ]
+        return "/".join(arguments + [f"git_hash_{get_commit_hash()}"])
 
     def __post_init__(self) -> None:
         if self.run_name is None:
