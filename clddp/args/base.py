@@ -29,7 +29,8 @@ class AutoRunNameArgumentsMixIn:
             for k in from_class.__annotations__.keys()
             if k not in self.escaped_args
         ]
-        return "/".join(arguments + [f"git_hash_{get_commit_hash()}"])
+        items = [f"{argument}_{getattr(self, argument)}" for argument in arguments]
+        return "/".join(items + [f"git_hash_{get_commit_hash()}"])
 
     def __post_init__(self) -> None:
         if self.run_name is None:
