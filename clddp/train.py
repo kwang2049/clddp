@@ -185,9 +185,10 @@ def run(
             wandb.finish()
 
 
-def main():
+def main(args: Optional[RetrievalTrainingArguments] = None):
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
-    args = parse_cli(RetrievalTrainingArguments)
+    if args is None:
+        args = parse_cli(RetrievalTrainingArguments)
 
     # Retriever building:
     config = RetrieverConfig(

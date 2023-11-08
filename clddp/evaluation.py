@@ -2,7 +2,7 @@ from enum import Enum
 import json
 import logging
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pytrec_eval
 from clddp.dm import (
@@ -147,7 +147,7 @@ def search_and_evaluate(
     return rpidls, report_prefixed
 
 
-def main():
+def main(args: Optional[EvaluationArguments] = None):
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
     args = parse_cli(EvaluationArguments)

@@ -1,7 +1,7 @@
 """Mine hard negatives."""
 import logging
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 import numpy as np
 
 import tqdm
@@ -61,10 +61,11 @@ def score_query_passages(
     return scores
 
 
-def main():
+def main(args: Optional[NegativeMiningArguments] = None):
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
-    args = parse_cli(NegativeMiningArguments)
+    if args is None:
+        args = parse_cli(NegativeMiningArguments)
     if is_device_zero():
         args.dump_arguments()
 

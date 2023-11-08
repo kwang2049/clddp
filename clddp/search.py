@@ -189,10 +189,11 @@ def search(
     return merged_rpidls
 
 
-def main():
+def main(args: Optional[SearchArguments] = None):
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
-    args = parse_cli(SearchArguments)
+    if args is None:
+        args = parse_cli(SearchArguments)
     if is_device_zero():
         args.dump_arguments()
 
