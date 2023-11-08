@@ -263,7 +263,7 @@ class RetrievalDataset:
             collection_size=len(dedup_quick_collection),
         )
         # Only the specified split is kept:
-        self.set_labeled_queries(split=split, labeled_queries=labeled_queries)
+        quick_dataset.set_labeled_queries(split=split, labeled_queries=labeled_queries)
         if save_pids_to_fpath:
             pids = [psg.passage_id for psg in quick_dataset.collection_iter]
             with open(save_pids_to_fpath, "w") as f:
