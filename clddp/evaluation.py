@@ -19,6 +19,8 @@ from clddp.utils import (
     get_rank,
     is_device_zero,
     set_logger_format,
+    parse_cli,
+    initialize_ddp,
 )
 from clddp.args.evaluation import EvaluationArguments
 from transformers import HfArgumentParser
@@ -145,10 +147,7 @@ def search_and_evaluate(
     return rpidls, report_prefixed
 
 
-if __name__ == "__main__":
-    """Example script: torchrun --nproc_per_node=4 --master_port=29501 -m clddp.evaluation --checkpoint_dir=..."""
-    from clddp.utils import parse_cli, initialize_ddp
-
+def main():
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
     args = parse_cli(EvaluationArguments)
@@ -182,3 +181,7 @@ if __name__ == "__main__":
             json.dump(report, f, indent=4)
         logging.info(f"Saved evaluation metrics to {freport}.")
     logging.info("Done")
+
+
+if __name__ == "__main__":
+    main()

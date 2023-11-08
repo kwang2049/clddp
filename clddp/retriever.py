@@ -25,7 +25,7 @@ from transformers.models.auto.modeling_auto import MODEL_FOR_TEXT_ENCODING_MAPPI
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
 import torch.distributed as dist
 from clddp.dm import Passage, Query
-from clddp.utils import dist_gather_tensor, colbert_score
+from clddp.utils import dist_gather_tensor, colbert_score, parse_cli, set_logger_format
 
 MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES[
     "mpnet"
@@ -365,13 +365,15 @@ class RetrieverBuildingArguments(RetrieverConfig):
     output_dir: Optional[str] = None
 
 
-if __name__ == "__main__":
-    # Build/convert a retriever into the supported format
-    from clddp.utils import parse_cli, set_logger_format
-
+def main():
+    """Build/convert a retriever into the supported format."""
     set_logger_format()
     args = parse_cli(RetrieverBuildingArguments)
     args_dict = dict(vars(args))
     args_dict.pop("output_dir")
     Retriever(RetrieverConfig(**args_dict)).save(args.output_dir)
     logging.info(f"Saved retriever checkpoint to {args.output_dir}")
+
+
+if __name__ == "__main__":
+    main()

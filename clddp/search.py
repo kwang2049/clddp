@@ -23,6 +23,8 @@ from clddp.utils import (
     set_logger_format,
     split_data,
     split_data_size,
+    parse_cli,
+    initialize_ddp,
 )
 from clddp.retriever import Retriever
 
@@ -187,9 +189,7 @@ def search(
     return merged_rpidls
 
 
-if __name__ == "__main__":
-    from clddp.utils import parse_cli, initialize_ddp
-
+def main():
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
     args = parse_cli(SearchArguments)
@@ -222,3 +222,7 @@ if __name__ == "__main__":
             retrieval_results=retrieval_results, fpath=fretrieved
         )
     logging.info("Done")
+
+
+if __name__ == "__main__":
+    main()

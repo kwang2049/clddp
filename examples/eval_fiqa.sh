@@ -24,7 +24,7 @@ if [ ! -d $CHECKPOINT_DIR ]; then
     echo "Checkpoint path $CHECKPOINT_DIR does not exist"
     exit
 fi
-export CUDA_VISIBLE_DEVICES="0,1,2,3"
+export CUDA_VISIBLE_DEVICES="0,1"
 export CLI_ARGS="
 --checkpoint_dir=$CHECKPOINT_DIR
 --data_dir=$DATASET_PATH
@@ -34,4 +34,4 @@ export OUTPUT_DIR=$(python -m clddp.args.evaluation $CLI_ARGS)
 mkdir -p $OUTPUT_DIR
 export LOG_PATH="$OUTPUT_DIR/logging.log"
 echo "Logging file path: $LOG_PATH"
-nohup torchrun --nproc_per_node=4 --master_port=29501 -m clddp.evaluation $CLI_ARGS > $LOG_PATH &
+nohup torchrun --nproc_per_node=2 --master_port=29501 -m clddp.evaluation $CLI_ARGS > $LOG_PATH &
