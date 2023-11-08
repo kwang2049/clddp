@@ -100,6 +100,7 @@ def main():
         RetrievedPassageIDList.dump_trec_csv(
             retrieval_results=kept_retrieval_results,
             fpath=os.path.join(args.output_dir, "mined_without_filtering.txt"),
+            system="retriever",
         )
 
     # Do filtering with the cross-encoder:
@@ -158,7 +159,9 @@ def main():
     if is_device_zero():
         fretrieved = os.path.join(args.output_dir, "mined_with_filtering.txt")
         RetrievedPassageIDList.dump_trec_csv(
-            retrieval_results=gathered_mined_negatives, fpath=fretrieved
+            retrieval_results=gathered_mined_negatives,
+            fpath=fretrieved,
+            system=args.cross_encoder,
         )
     logging.info("Done")
 

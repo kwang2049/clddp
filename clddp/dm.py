@@ -164,7 +164,9 @@ class RetrievedPassageIDList:
         )
 
     def dump_trec_csv(
-        retrieval_results: List[RetrievedPassageIDList], fpath: str
+        retrieval_results: List[RetrievedPassageIDList],
+        fpath: str,
+        system: str = "retriever",
     ) -> None:
         with open(fpath, "w") as f:
             for ranking in tqdm.tqdm(
@@ -182,7 +184,7 @@ class RetrievedPassageIDList:
                         spsg_id.passage_id,
                         str(i + 1),
                         str(spsg_id.score),
-                        "clddp",
+                        system,
                     )
                     f.write(" ".join(row) + "\n")
         logging.info(f"Dumped retrieval results to {fpath} in TREC format.")
