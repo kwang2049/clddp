@@ -35,18 +35,15 @@ class JudgedPassage:
 class LabeledQuery:
     query: Query
     positives: List[JudgedPassage]
-    negatives: Optional[List[JudgedPassage]] = None
+    negatives: List[JudgedPassage]
 
     def __post_init__(self):
         assert all(jpsg.judgement > 0 for jpsg in self.positives)
+        assert all(jpsg.judgement == 0 for jpsg in self.negatives)
         assert all(
-            jpsg.query.query_id == self.query.query_id for jpsg in self.positives
+            jpsg.query.query_id == self.query.query_id
+            for jpsg in self.positives + self.negatives
         )
-        if self.negatives:
-            assert all(jpsg.judgement == 0 for jpsg in self.negatives)
-            assert all(
-                jpsg.query.query_id == self.query.query_id for jpsg in self.negatives
-            )
 
     @staticmethod
     def build_qrels(labeled_queries: List[LabeledQuery]) -> Dict[str, Dict[str, int]]:
@@ -63,6 +60,57 @@ class LabeledQuery:
         qid2query = {lq.query.query_id: lq.query for lq in labeled_queries}
         queries = list(qid2query.values())
         return queries
+
+    @staticmethod
+    def build_qid2query(labeled_queries: List[LabeledQuery]) -> Dict[str, Query]:
+        qid2query = {}
+        for lq in labeled_queries:
+            qid2query[lq.query.query_id] = lq.query
+        return qid2query
+
+    @staticmethod
+    def build_qid2positives(
+        labeled_queries: List[LabeledQuery],
+    ) -> Dict[str, List[JudgedPassage]]:
+        qid2positives: Dict[str, List[JudgedPassage]] = {}
+        for lq in labeled_queries:
+            qid = lq.query.query_id
+            for jpsg in lq.positives:
+                qid2positives.setdefault(qid, [])
+                qid2positives[qid].append(jpsg)
+        return qid2positives
+
+    @staticmethod
+    def build_qid2negatives(
+        labeled_queries: List[LabeledQuery],
+    ) -> Dict[str, List[JudgedPassage]]:
+        qid2negatives: Dict[str, List[JudgedPassage]] = {}
+        for lq in labeled_queries:
+            qid = lq.query.query_id
+            for jpsg in lq.negatives:
+                qid2negatives.setdefault(qid, [])
+                qid2negatives[qid].append(jpsg)
+        return qid2negatives
+
+    @staticmethod
+    def merge(labeled_queries: List[LabeledQuery]) -> List[LabeledQuery]:
+        """Merge labeled queries with the same query ID into one."""
+        qid2query = {lq.query.query_id: lq.query for lq in labeled_queries}
+        qid2positives: Dict[
+            str, List[JudgedPassage]
+        ] = LabeledQuery.build_qid2positives(labeled_queries)
+        qid2negatives: Dict[
+            str, List[JudgedPassage]
+        ] = LabeledQuery.build_qid2negatives(labeled_queries)
+        lqs = []
+        for qid, query in qid2query.items():
+            lq = LabeledQuery(
+                query=query,
+                positives=qid2positives[qid],
+                negatives=qid2negatives.get(qid, []),
+            )
+            lqs.append(lq)
+        return lqs
 
 
 @dataclass
