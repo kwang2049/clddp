@@ -3,7 +3,14 @@ import csv
 import logging
 import os
 from typing import Dict, List, Optional
-from clddp.dm import JudgedPassage, Passage, Query, RetrievalDataset, Split
+from clddp.dm import (
+    LabeledQuery,
+    JudgedPassage,
+    Passage,
+    Query,
+    RetrievalDataset,
+    Split,
+)
 from clddp.utils import is_device_zero, tqdm_ropen
 import ujson
 
@@ -70,10 +77,10 @@ class BEIRDataloader(BaseDataLoader):
 
         # Loading qrels:
         split = Split.train
-        jpsgs_train = []
-        jpsgs_dev = []
-        jpsgs_test = []
-        for jpsgs, split in zip([jpsgs_train, jpsgs_dev, jpsgs_test], Split):
+        train_lqs = []
+        dev_lqs = []
+        test_lqs = []
+        for lqs, split in zip([train_lqs, dev_lqs, test_lqs], Split):
             qrels = BEIRDataloader.load_qrels_from_beir(
                 data_dir=data_name_or_path, split=split
             )
@@ -81,19 +88,27 @@ class BEIRDataloader(BaseDataLoader):
                 continue
 
             for qid, rels in qrels.items():
+                query = qid2query[qid]
+                positives = []
+                negatives = []
                 for pid, rel in rels.items():
                     jpsg = JudgedPassage(
                         query=qid2query[qid], passage=pid2psg[pid], judgement=rel
                     )
-                    jpsgs.append(jpsg)
+                    if rel:
+                        positives.append(jpsg)
+                    else:
+                        negatives.append(jpsg)
+                lq = LabeledQuery(query=query, positives=positives, negatives=negatives)
+                lqs.append(lq)
 
         # Return loaded data:
         return RetrievalDataset(
             collection_iter_fn=lambda: iter(collection),
             collection_size=len(collection),
-            judged_passages_train=jpsgs_train,
-            judged_passages_dev=jpsgs_dev,
-            judged_passages_test=jpsgs_test,
+            train_labeled_queries=train_lqs,
+            dev_labeled_queries=dev_lqs,
+            test_labeled_queries=test_lqs,
         )
 
 

@@ -30,18 +30,37 @@ class JudgedPassage:
     passage: Passage
     judgement: int
 
+
+@dataclass
+class LabeledQuery:
+    query: Query
+    positives: List[JudgedPassage]
+    negatives: Optional[List[JudgedPassage]] = None
+
+    def __post_init__(self):
+        assert all(jpsg.judgement > 0 for jpsg in self.positives)
+        assert all(
+            jpsg.query.query_id == self.query.query_id for jpsg in self.positives
+        )
+        if self.negatives:
+            assert all(jpsg.judgement == 0 for jpsg in self.negatives)
+            assert all(
+                jpsg.query.query_id == self.query.query_id for jpsg in self.negatives
+            )
+
     @staticmethod
-    def build_qrels(judeged_passages: List[JudgedPassage]) -> Dict[str, Dict[str, int]]:
+    def build_qrels(labeled_queries: List[LabeledQuery]) -> Dict[str, Dict[str, int]]:
         """Build the qrels for trec_eval https://github.com/cvangysel/pytrec_eval."""
         qrels = {}
-        for jp in judeged_passages:
-            qrels.setdefault(jp.query.query_id, {})
-            qrels[jp.query.query_id][jp.passage.passage_id] = jp.judgement
+        for lq in labeled_queries:
+            for jpsg in lq.positives:
+                qrels.setdefault(jpsg.query.query_id, {})
+                qrels[jpsg.query.query_id][jpsg.passage.passage_id] = jpsg.judgement
         return qrels
 
     @staticmethod
-    def get_unique_queries(judged_passages: List[JudgedPassage]) -> List[Query]:
-        qid2query = {jpsg.query.query_id: jpsg.query for jpsg in judged_passages}
+    def get_unique_queries(labeled_queries: List[LabeledQuery]) -> List[Query]:
+        qid2query = {lq.query.query_id: lq.query for lq in labeled_queries}
         queries = list(qid2query.values())
         return queries
 
@@ -133,19 +152,19 @@ class RetrievalDataset:
         [], Iterable[Passage]
     ]  # This design is for handling very large collections
     collection_size: int
-    judged_passages_train: Optional[List[JudgedPassage]] = None
-    judged_passages_dev: Optional[List[JudgedPassage]] = None
-    judged_passages_test: Optional[List[JudgedPassage]] = None
+    train_labeled_queries: Optional[List[LabeledQuery]] = None
+    dev_labeled_queries: Optional[List[LabeledQuery]] = None
+    test_labeled_queries: Optional[List[LabeledQuery]] = None
 
     @property
     def collection_iter(self) -> Iterable[Passage]:
         return self.collection_iter_fn()
 
-    def get_judged_passages(self, split: Split) -> Optional[List[JudgedPassage]]:
+    def get_labeled_queries(self, split: Split) -> Optional[List[LabeledQuery]]:
         return {
-            Split.train: self.judged_passages_train,
-            Split.dev: self.judged_passages_dev,
-            Split.test: self.judged_passages_test,
+            Split.train: self.train_labeled_queries,
+            Split.dev: self.dev_labeled_queries,
+            Split.test: self.test_labeled_queries,
         }[split]
 
     def to_quick_version(
@@ -155,10 +174,11 @@ class RetrievalDataset:
         progress_bar: bool = False,
         save_pids_to_fpath: Optional[str] = None,
     ) -> RetrievalDataset:
-        """Build a quick version for the dataset with a trimmed collection containing only the judged passages and a few sampled passages."""
-        judged_passages = self.get_judged_passages(split)
+        """Build a quick version for the dataset with a trimmed collection containing only the positive passages and a few sampled passages."""
+        labeled_queries = self.get_labeled_queries(split)
         random_state = random.Random(seed)
-        jpsgs_ids = {jpsg.passage.passage_id for jpsg in judged_passages}
+        positives = [jpsg for lq in labeled_queries for jpsg in lq.positives]
+        jpsgs_ids = {jpsg.passage.passage_id for jpsg in positives}
         sampled_indices = set(
             random_state.sample(list(range(self.collection_size)), len(jpsgs_ids))
         )
@@ -173,7 +193,7 @@ class RetrievalDataset:
         ):
             if i in sampled_indices:
                 sampled_passages.append(psg)
-        quick_collection = [jpsg.passage for jpsg in judged_passages] + sampled_passages
+        quick_collection = [jpsg.passage for jpsg in positives] + sampled_passages
         pid2psg = {psg.passage_id: psg for psg in quick_collection}
         dedup_quick_collection = list(pid2psg.values())
         random_state.shuffle(dedup_quick_collection)
@@ -183,12 +203,12 @@ class RetrievalDataset:
         )
         # Only the specified split is kept:
         if split is Split.train:
-            quick_dataset.judged_passages_train = judged_passages
+            quick_dataset.train_labeled_queries = labeled_queries
         elif split is Split.dev:
-            quick_dataset.judged_passages_dev = judged_passages
+            quick_dataset.dev_labeled_queries = labeled_queries
         else:
             assert split is Split.test
-            quick_dataset.judged_passages_test = judged_passages
+            quick_dataset.test_labeled_queries = labeled_queries
         if save_pids_to_fpath:
             pids = [psg.passage_id for psg in quick_dataset.collection_iter]
             with open(save_pids_to_fpath, "w") as f:

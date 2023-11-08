@@ -10,7 +10,7 @@ import torch
 import torch.distributed as dist
 from transformers import Trainer
 from torch.utils.data import Dataset
-from clddp.dm import JudgedPassage, RetrievalDataset, RetrievedPassageIDList, Split
+from clddp.dm import LabeledQuery, RetrievalDataset, RetrievedPassageIDList, Split
 from clddp.evaluation import search_and_evaluate
 from clddp.args.train import RetrievalTrainingArguments
 from clddp.retriever import RetrievalTrainingExample, Retriever, RetrieverConfig
@@ -66,25 +66,21 @@ class RetrievalTrainer(Trainer):
 
 
 class RetrievalTrainingData(Dataset):
-    def __init__(self, training_data: List[JudgedPassage], num_negatives: int):
+    def __init__(self, training_data: List[LabeledQuery], num_negatives: int):
         self.num_negatives = num_negatives
-        self.qid2positives: Dict[str, List[JudgedPassage]] = {}
-        self.qid2negatives: Dict[str, List[JudgedPassage]] = {}
-        for jpsg in training_data:
-            qid2jpsgs = self.qid2positives if jpsg.judgement else self.qid2negatives
-            qid2jpsgs.setdefault(jpsg.query.query_id, [])
-            qid2jpsgs[jpsg.query.query_id].append(jpsg)
-        self.qids = (
-            list(set(self.qid2positives) & set(self.qid2negatives))
-            if num_negatives
-            else list(self.qid2positives)
-        )
+        self.data = training_data
+        for lq in training_data:
+            assert len(lq.positives), f"No positives for query ID {lq.query.query_id}"
+        if num_negatives:
+            for lq in training_data:
+                assert len(
+                    lq.negatives
+                ), f"No negatives for query ID {lq.query.query_id} (num_negatives set to {num_negatives})"
 
     def __getitem__(self, item: int):
-        positives = self.qid2positives[self.qids[item]]
-        negatives = self.qid2negatives.get(self.qids[item], [])
-        if len(negatives):
-            self.num_negatives, f"Seems like a bug (qid={self.qids[item]})"
+        lq = self.data[item]
+        positives = list(lq.positives)
+        negatives = list(lq.negatives) if lq.negatives else []
         random.shuffle(positives)
         random.shuffle(negatives)
         positive = positives[0]
@@ -93,7 +89,7 @@ class RetrievalTrainingData(Dataset):
         return RetrievalTrainingExample(query=positive.query, passages=passages)
 
     def __len__(self):
-        return len(self.qids)
+        return len(self.data)
 
 
 def run(
@@ -217,7 +213,7 @@ def main():
         data_name_or_path=args.train_data,
     )
     training_data = RetrievalTrainingData(
-        training_data=train_dataset.judged_passages_train,
+        training_data=train_dataset.train_labeled_queries,
         num_negatives=args.num_negatives,
     )
     dev_dataset = train_dataset

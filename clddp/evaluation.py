@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pytrec_eval
 from clddp.dm import (
-    JudgedPassage,
+    LabeledQuery,
     RetrievalDataset,
     RetrievedPassageIDList,
     Split,
@@ -57,9 +57,9 @@ class RetrievalEvaluator:
         ),
         precision: int = 4,
     ) -> None:
-        self.judged_passages = eval_dataset.get_judged_passages(split)
-        self.queries = JudgedPassage.get_unique_queries(self.judged_passages)
-        self.qrels = JudgedPassage.build_qrels(self.judged_passages)
+        self.labeled_queries = eval_dataset.get_labeled_queries(split)
+        self.queries = LabeledQuery.get_unique_queries(self.labeled_queries)
+        self.qrels = LabeledQuery.build_qrels(self.labeled_queries)
         self.metrics = metrics
         self.precision = precision
 

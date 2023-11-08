@@ -7,7 +7,7 @@ from more_itertools import chunked
 import torch
 import tqdm
 from clddp.dm import (
-    JudgedPassage,
+    LabeledQuery,
     Passage,
     Query,
     RetrievedPassageIDList,
@@ -205,8 +205,8 @@ if __name__ == "__main__":
     dataset = load_dataset(
         enable=True, dataloader_name=args.dataloader, data_name_or_path=args.data_dir
     )
-    jpsgs = dataset.get_judged_passages(args.split)
-    queries = JudgedPassage.get_unique_queries(jpsgs)
+    labeled_queries = dataset.get_labeled_queries(args.split)
+    queries = LabeledQuery.get_unique_queries(labeled_queries)
     retrieval_results = search(
         retriever=retriever,
         collection_iter=dataset.collection_iter,
