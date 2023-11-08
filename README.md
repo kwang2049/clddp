@@ -102,7 +102,7 @@ Evaluation is similar and the example can be found [here](examples/eval_fiqa.sh)
 For loading custom data, one needs to inherit the `clddp.dataloader.BaseDataLoader` and add it to the lookup map `clddp.DATA_LOADER_LOOKUP`:
 
 ```python
-# my_dataloader.py
+from clddp.train import main
 from clddp.dataloader import BaseDataLoader, DATA_LOADER_LOOKUP
 from clddp.dm import RetrievalDataset
 
@@ -111,5 +111,8 @@ class MyDataLoader(BaseDataLoader):
         ...
 
 DATA_LOADER_LOOKUP["my_dataloader"] = MyDataLoader
+
+if __name__ == "__main__":
+    main()  # Same for other entry points
 ```
 Then, one can specify the `xxx_dataloader=my_dataloader` in the CLI arguments.
