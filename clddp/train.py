@@ -16,6 +16,7 @@ from clddp.args.train import RetrievalTrainingArguments
 from clddp.retriever import RetrievalTrainingExample, Retriever, RetrieverConfig
 from clddp.utils import is_device_zero, set_logger_format, parse_cli
 from clddp.dataloader import load_dataset
+from clddp.mine import load_negatives
 
 
 class RetrievalTrainer(Trainer):
@@ -72,10 +73,18 @@ class RetrievalTrainingData(Dataset):
         for lq in training_data:
             assert len(lq.positives), f"No positives for query ID {lq.query.query_id}"
         if num_negatives:
+            self.data = []
             for lq in training_data:
-                assert len(
-                    lq.negatives
-                ), f"No negatives for query ID {lq.query.query_id} (num_negatives set to {num_negatives})"
+                if len(lq.negatives) == 0:
+                    logging.warn(
+                        f"No negatives for query ID {lq.query.query_id} (num_negatives set to {num_negatives})"
+                    )
+                    continue
+                self.data.append(lq)
+            if len(training_data) > len(self.data):
+                logging.info(
+                    f"Kept {len(self.data)} out of {len(training_data)}. The data are removed due to no negatives."
+                )
 
     def __getitem__(self, item: int):
         lq = self.data[item]
@@ -213,6 +222,16 @@ def main(args: Optional[RetrievalTrainingArguments] = None):
         dataloader_name=args.train_dataloader,
         data_name_or_path=args.train_data,
     )
+    if args.negatives_path:
+        assert args.do_train
+        assert train_dataset is not None
+        assert args.num_negatives
+        load_negatives(
+            negatives_path=args.negatives_path,
+            dataset=train_dataset,
+            split=Split.train,
+            prograss_bar=is_device_zero(),
+        )
     training_data = RetrievalTrainingData(
         training_data=train_dataset.train_labeled_queries,
         num_negatives=args.num_negatives,

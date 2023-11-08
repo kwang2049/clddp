@@ -10,9 +10,12 @@ from clddp.search import search
 from clddp.dm import (
     LabeledQuery,
     Passage,
+    JudgedPassage,
     Query,
     RetrievedPassageIDList,
     ScoredPassageID,
+    RetrievalDataset,
+    Split,
 )
 from clddp.dataloader import load_dataset
 from clddp.retriever import Retriever
@@ -165,6 +168,46 @@ def main(args: Optional[NegativeMiningArguments] = None):
             system=args.cross_encoder,
         )
     logging.info("Done")
+
+
+def load_negatives(
+    negatives_path: str, dataset: RetrievalDataset, split: Split, prograss_bar: bool
+) -> None:
+    """Load the negatives and merge them into the corresponding labeled queries."""
+    logging.info("Loading negatives")
+    labeled_queries = dataset.get_labeled_queries(split)
+    qid2query = LabeledQuery.build_qid2query(labeled_queries)
+    qid2pids: Dict[str, List[str]] = {}
+    with open(negatives_path) as f:
+        for line in f:
+            qid, _, pid, rank, score, system = line.strip().split()
+            assert (
+                qid in qid2query
+            ), f"The mining results contain query ID not belonging to the {split} split"
+            qid2pids.setdefault(qid, [])
+            qid2pids[qid].append(pid)
+    pids = {pid for passage_ids in qid2pids.values() for pid in passage_ids}
+    pid2psg = {}
+    for psg in tqdm.tqdm(
+        dataset.collection_iter,
+        desc="Locating negatives in collection",
+        total=dataset.collection_size,
+        disable=not prograss_bar,
+    ):
+        if psg.passage_id not in pids:
+            continue
+        pid2psg[psg.passage_id] = psg
+    loaded_lqs = []
+    for qid, pids in qid2pids.items():
+        query = qid2query[qid]
+        negatives = [
+            JudgedPassage(query=query, passage=pid2psg[pid], judgement=0)
+            for pid in pids
+        ]
+        lq = LabeledQuery(query=query, positives=[], negatives=negatives)
+        loaded_lqs.append(lq)
+    lqs_merged = LabeledQuery.merge(labeled_queries + loaded_lqs)
+    dataset.set_labeled_queries(split=split, labeled_queries=lqs_merged)
 
 
 if __name__ == "__main__":

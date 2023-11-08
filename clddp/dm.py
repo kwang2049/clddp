@@ -217,6 +217,17 @@ class RetrievalDataset:
             Split.test: self.test_labeled_queries,
         }[split]
 
+    def set_labeled_queries(
+        self, split: Split, labeled_queries: List[LabeledQuery]
+    ) -> None:
+        if split is Split.train:
+            self.train_labeled_queries = labeled_queries
+        elif split is Split.dev:
+            self.dev_labeled_queries = labeled_queries
+        else:
+            assert split is Split.test
+            self.test_labeled_queries = labeled_queries
+
     def to_quick_version(
         self,
         split: Split,
@@ -252,13 +263,7 @@ class RetrievalDataset:
             collection_size=len(dedup_quick_collection),
         )
         # Only the specified split is kept:
-        if split is Split.train:
-            quick_dataset.train_labeled_queries = labeled_queries
-        elif split is Split.dev:
-            quick_dataset.dev_labeled_queries = labeled_queries
-        else:
-            assert split is Split.test
-            quick_dataset.test_labeled_queries = labeled_queries
+        self.set_labeled_queries(split=split, labeled_queries=labeled_queries)
         if save_pids_to_fpath:
             pids = [psg.passage_id for psg in quick_dataset.collection_iter]
             with open(save_pids_to_fpath, "w") as f:
