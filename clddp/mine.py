@@ -134,6 +134,8 @@ def main(args: Optional[NegativeMiningArguments] = None):
         disable=not is_device_zero(),
     ):
         query = qid2query[rr.query_id]
+        if rr.query_id not in qid2positives:
+            continue
         positives = [jpsg.passage for jpsg in qid2positives[rr.query_id]]
         positive_scores = score_query_passages(
             cross_encoder=cross_encoder, query=query, passages=positives
