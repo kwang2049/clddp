@@ -106,7 +106,7 @@ class LabeledQuery:
         for qid, query in qid2query.items():
             lq = LabeledQuery(
                 query=query,
-                positives=qid2positives[qid],
+                positives=qid2positives.get(qid, []),
                 negatives=qid2negatives.get(qid, []),
             )
             lqs.append(lq)

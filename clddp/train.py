@@ -69,19 +69,22 @@ class RetrievalTrainer(Trainer):
 class RetrievalTrainingData(Dataset):
     def __init__(self, training_data: List[LabeledQuery], num_negatives: int):
         self.num_negatives = num_negatives
-        self.data = training_data
-        for lq in training_data:
-            assert len(lq.positives), f"No positives for query ID {lq.query.query_id}"
+        with_positives = [lq for lq in training_data if len(lq.positives)]
+        self.data = with_positives
+        if len(with_positives) < len(training_data):
+            logging.info(
+                f"Kept {len(with_positives)} labeled queries which have positives out of {len(training_data)}."
+            )
         if num_negatives:
             self.data = []
-            for lq in training_data:
+            for lq in with_positives:
                 if len(lq.negatives) == 0:
                     logging.warn(
                         f"No negatives for query ID {lq.query.query_id} (num_negatives set to {num_negatives})"
                     )
                     continue
                 self.data.append(lq)
-            if len(training_data) > len(self.data):
+            if len(with_positives) > len(self.data):
                 logging.info(
                     f"Kept {len(self.data)} out of {len(training_data)}. The data are removed due to no negatives."
                 )
