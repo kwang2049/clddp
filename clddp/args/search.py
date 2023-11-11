@@ -32,6 +32,4 @@ class SearchArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn):
 
 
 if __name__ == "__main__":
-    print(
-        parse_cli(SearchArguments).build_output_dir()
-    )  # For creating the logging path
+    print(parse_cli(SearchArguments).output_dir)  # For creating the logging path

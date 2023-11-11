@@ -37,5 +37,5 @@ class NegativeMiningArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn)
 
 if __name__ == "__main__":
     print(
-        parse_cli(NegativeMiningArguments).build_output_dir()
+        parse_cli(NegativeMiningArguments).output_dir
     )  # For creating the logging path

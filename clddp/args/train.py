@@ -97,5 +97,5 @@ class RetrievalTrainingArguments(
 
 if __name__ == "__main__":
     print(
-        parse_cli(RetrievalTrainingArguments).build_output_dir()
+        parse_cli(RetrievalTrainingArguments).output_dir
     )  # For creating the logging path

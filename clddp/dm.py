@@ -189,6 +189,26 @@ class RetrievedPassageIDList:
                     f.write(" ".join(row) + "\n")
         logging.info(f"Dumped retrieval results to {fpath} in TREC format.")
 
+    @classmethod
+    def from_trec_csv(
+        cls: Type[RetrievedPassageIDList], fpath: str
+    ) -> List[RetrievedPassageIDList]:
+        logging.info(f"Loading retrieval results from {fpath} in TREC format")
+        qid2pid2score: Dict[str, Dict[str, float]] = {}
+        with open(fpath, "r") as f:
+            for line in f:
+                qid, _, pid, rank, score, system = line.strip().split()
+                qid2pid2score.setdefault(qid, {})
+                qid2pid2score[qid][pid] = score
+        loaded: List[cls] = []
+        for qid, pid2score in qid2pid2score.items():
+            scored: List[ScoredPassageID] = []
+            for pid, score in pid2score.items():
+                scored.append(ScoredPassageID(passage_id=pid, score=score))
+            loaded.append(cls(query_id=qid, scored_passage_ids=scored))
+        logging.info("Loaded")
+        return loaded
+
 
 class Split(str, Enum):
     train = "train"

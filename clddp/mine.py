@@ -64,6 +64,10 @@ def score_query_passages(
     return scores
 
 
+MINED_WITHOUT_FILTERING = "mined_without_filtering.txt"
+MINED_WITH_FILTERING = "mined_with_filtering.txt"
+
+
 def main(args: Optional[NegativeMiningArguments] = None):
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
@@ -84,27 +88,35 @@ def main(args: Optional[NegativeMiningArguments] = None):
     )
     labeled_queries = LabeledQuery.merge(dataset.get_labeled_queries(args.split))
     queries = LabeledQuery.get_unique_queries(labeled_queries)
-    retrieval_results: List[RetrievedPassageIDList] = search(
-        retriever=retriever,
-        collection_iter=dataset.collection_iter,
-        collection_size=dataset.collection_size,
-        queries=queries,
-        topk=args.end_ranking,
-        per_device_eval_batch_size=args.per_device_eval_batch_size,
-        fp16=args.fp16,
+    mined_without_filtering_path = os.path.join(
+        args.output_dir, MINED_WITHOUT_FILTERING
     )
+    if not os.path.exists(mined_without_filtering_path):
+        retrieval_results: List[RetrievedPassageIDList] = search(
+            retriever=retriever,
+            collection_iter=dataset.collection_iter,
+            collection_size=dataset.collection_size,
+            queries=queries,
+            topk=args.end_ranking,
+            per_device_eval_batch_size=args.per_device_eval_batch_size,
+            fp16=args.fp16,
+        )
 
-    # Keep candidates in the specified range:
-    kept_retrieval_results = keep_range(
-        retrieval_results=retrieval_results,
-        start_ranking=args.start_ranking,
-        end_ranking=args.end_ranking,
-    )
-    if is_device_zero():
-        RetrievedPassageIDList.dump_trec_csv(
-            retrieval_results=kept_retrieval_results,
-            fpath=os.path.join(args.output_dir, "mined_without_filtering.txt"),
-            system="retriever",
+        # Keep candidates in the specified range:
+        kept_retrieval_results = keep_range(
+            retrieval_results=retrieval_results,
+            start_ranking=args.start_ranking,
+            end_ranking=args.end_ranking,
+        )
+        if is_device_zero():
+            RetrievedPassageIDList.dump_trec_csv(
+                retrieval_results=kept_retrieval_results,
+                fpath=mined_without_filtering_path,
+                system="retriever",
+            )
+    else:
+        kept_retrieval_results = RetrievedPassageIDList.from_trec_csv(
+            mined_without_filtering_path
         )
 
     # Do filtering with the cross-encoder:
@@ -163,7 +175,7 @@ def main(args: Optional[NegativeMiningArguments] = None):
         )
     gathered_mined_negatives = sum(all_gather_object(mined_negatives), [])
     if is_device_zero():
-        fretrieved = os.path.join(args.output_dir, "mined_with_filtering.txt")
+        fretrieved = os.path.join(args.output_dir, MINED_WITH_FILTERING)
         RetrievedPassageIDList.dump_trec_csv(
             retrieval_results=gathered_mined_negatives,
             fpath=fretrieved,

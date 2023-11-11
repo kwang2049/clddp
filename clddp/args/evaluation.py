@@ -32,6 +32,4 @@ class EvaluationArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn):
 
 
 if __name__ == "__main__":
-    print(
-        parse_cli(EvaluationArguments).build_output_dir()
-    )  # For creating the logging path
+    print(parse_cli(EvaluationArguments).output_dir)  # For creating the logging path
