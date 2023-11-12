@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 import numpy as np
 
 import tqdm
-from clddp.args.mine import NegativeMiningArguments
+from clddp.args.mine import PassageMiningArguments
 from clddp.search import search
 from clddp.dm import (
     LabeledQuery,
@@ -51,6 +51,9 @@ def keep_range(
 def score_query_passages(
     cross_encoder: CrossEncoder, query: Query, passages: List[Passage]
 ) -> List[float]:
+    if len(passages) == 0:
+        return []
+
     pairs = [
         (
             query.text,
@@ -64,15 +67,17 @@ def score_query_passages(
     return scores
 
 
+RETRIEVAL_RESULTS = "retrieval_results.txt"
 MINED_WITHOUT_FILTERING = "mined_without_filtering.txt"
 MINED_WITH_FILTERING = "mined_with_filtering.txt"
+MINED_POSITIVES = "mined_positives.txt"
 
 
-def main(args: Optional[NegativeMiningArguments] = None):
+def main(args: Optional[PassageMiningArguments] = None):
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
     if args is None:
-        args = parse_cli(NegativeMiningArguments)
+        args = parse_cli(PassageMiningArguments)
     if is_device_zero():
         args.dump_arguments()
 
@@ -88,41 +93,47 @@ def main(args: Optional[NegativeMiningArguments] = None):
     )
     labeled_queries = LabeledQuery.merge(dataset.get_labeled_queries(args.split))
     queries = LabeledQuery.get_unique_queries(labeled_queries)
-    mined_without_filtering_path = os.path.join(
-        args.output_dir, MINED_WITHOUT_FILTERING
-    )
-    if not os.path.exists(mined_without_filtering_path):
+    retrieval_results_path = os.path.join(args.output_dir, RETRIEVAL_RESULTS)
+    if not os.path.exists(retrieval_results_path):
         retrieval_results: List[RetrievedPassageIDList] = search(
             retriever=retriever,
             collection_iter=dataset.collection_iter,
             collection_size=dataset.collection_size,
             queries=queries,
-            topk=args.end_ranking,
+            topk=max(args.positive_end_ranking, args.negative_end_ranking),
             per_device_eval_batch_size=args.per_device_eval_batch_size,
             fp16=args.fp16,
         )
-
-        # Keep candidates in the specified range:
-        kept_retrieval_results = keep_range(
+        RetrievedPassageIDList.dump_trec_csv(
             retrieval_results=retrieval_results,
-            start_ranking=args.start_ranking,
-            end_ranking=args.end_ranking,
+            fpath=retrieval_results_path,
+            system="retriever",
         )
-        if is_device_zero():
-            RetrievedPassageIDList.dump_trec_csv(
-                retrieval_results=kept_retrieval_results,
-                fpath=mined_without_filtering_path,
-                system="retriever",
-            )
     else:
-        kept_retrieval_results = RetrievedPassageIDList.from_trec_csv(
-            mined_without_filtering_path
+        retrieval_results = RetrievedPassageIDList.from_trec_csv(retrieval_results_path)
+
+    # Keep candidates in the specified range:
+    positive_candidates = keep_range(
+        retrieval_results=retrieval_results,
+        start_ranking=args.positive_start_ranking,
+        end_ranking=args.positive_end_ranking,
+    )
+    negative_candidates = keep_range(
+        retrieval_results=retrieval_results,
+        start_ranking=args.negative_start_ranking,
+        end_ranking=args.negative_end_ranking,
+    )
+    if is_device_zero():
+        RetrievedPassageIDList.dump_trec_csv(
+            retrieval_results=negative_candidates,
+            fpath=os.path.join(args.output_dir, MINED_WITHOUT_FILTERING),
+            system="retriever",
         )
 
     # Do filtering with the cross-encoder:
     pids = {
         spid.passage_id
-        for rr in kept_retrieval_results
+        for rr in positive_candidates + negative_candidates
         for spid in rr.scored_passage_ids
     }
     pid2psg: Dict[str, Passage] = {}
@@ -139,46 +150,88 @@ def main(args: Optional[NegativeMiningArguments] = None):
     qid2query = LabeledQuery.build_qid2query(labeled_queries)
     cross_encoder = CrossEncoder(args.cross_encoder)
     mined_negatives: List[RetrievedPassageIDList] = []
-    for rr in tqdm.tqdm(
-        split_data(kept_retrieval_results),
-        desc="Filtering true negatives",
-        total=split_data_size(len(kept_retrieval_results)),
+    mined_positives: List[RetrievedPassageIDList] = []
+    for positive_candidates_rr, negative_candidates_rr in tqdm.tqdm(
+        zip(split_data(positive_candidates), split_data(negative_candidates)),
+        desc="Filtering passages",
+        total=split_data_size(len(negative_candidates)),
         disable=not is_device_zero(),
     ):
-        query = qid2query[rr.query_id]
-        if rr.query_id not in qid2positives:
+        # First calculate the scores of the labeled positives as the baseline:
+        assert positive_candidates_rr.query_id == negative_candidates_rr.query_id
+        query = qid2query[positive_candidates_rr.query_id]
+        if query.query_id not in qid2positives:
             continue
-        positives = [jpsg.passage for jpsg in qid2positives[rr.query_id]]
+        positives = [jpsg.passage for jpsg in qid2positives[query.query_id]]
         positive_scores = score_query_passages(
             cross_encoder=cross_encoder, query=query, passages=positives
         )
         avg_positive_score = np.mean(positive_scores)
         positive_ids = {psg.passage_id for psg in positives}
-        negatives = [
+
+        # Compute the scores:
+        negative_candidate_passages = [
             pid2psg[spid.passage_id]
-            for spid in rr.scored_passage_ids
+            for spid in negative_candidates_rr.scored_passage_ids
             if spid.passage_id not in positive_ids
         ]
-        negative_scores = score_query_passages(
-            cross_encoder=cross_encoder, query=query, passages=negatives
+        positive_candidate_passages = [
+            pid2psg[spid.passage_id]
+            for spid in positive_candidates_rr.scored_passage_ids
+            if spid.passage_id not in positive_ids
+        ]
+        candidate_passages = negative_candidate_passages + positive_candidate_passages
+        scores = score_query_passages(
+            cross_encoder=cross_encoder,
+            query=query,
+            passages=candidate_passages,
         )
-        scored_passage_ids = []
-        for psg, score in zip(negatives, negative_scores):
-            if avg_positive_score - score > args.cross_encoder_margin:
-                scored_passage_ids.append(
+        pid2score = {
+            psg.passage_id: score for psg, score in zip(candidate_passages, scores)
+        }
+
+        # Go over the negative candidates and do filtering:
+        mined_negative_passage_ids = []
+        for psg in negative_candidate_passages:
+            score = pid2score[psg.passage_id]
+            if avg_positive_score - score > args.cross_encoder_margin_to_negatives:
+                mined_negative_passage_ids.append(
                     ScoredPassageID(passage_id=psg.passage_id, score=score)
                 )
-        mined_negatives.append(
-            RetrievedPassageIDList(
-                query_id=query.query_id, scored_passage_ids=scored_passage_ids
+        if len(mined_negative_passage_ids):
+            mined_negatives.append(
+                RetrievedPassageIDList(
+                    query_id=query.query_id,
+                    scored_passage_ids=mined_negative_passage_ids,
+                )
             )
-        )
+
+        # Go over the positive candidates and do filtering:
+        mined_positive_passage_ids = []
+        for psg in positive_candidate_passages:
+            score = pid2score[psg.passage_id]
+            if score > avg_positive_score:
+                mined_positive_passage_ids.append(
+                    ScoredPassageID(passage_id=psg.passage_id, score=score)
+                )
+        if len(mined_positive_passage_ids):
+            mined_positives.append(
+                RetrievedPassageIDList(
+                    query_id=query.query_id,
+                    scored_passage_ids=mined_positive_passage_ids,
+                )
+            )
     gathered_mined_negatives = sum(all_gather_object(mined_negatives), [])
+    gathered_mined_positives = sum(all_gather_object(mined_positives), [])
     if is_device_zero():
-        fretrieved = os.path.join(args.output_dir, MINED_WITH_FILTERING)
         RetrievedPassageIDList.dump_trec_csv(
             retrieval_results=gathered_mined_negatives,
-            fpath=fretrieved,
+            fpath=os.path.join(args.output_dir, MINED_WITH_FILTERING),
+            system=args.cross_encoder,
+        )
+        RetrievedPassageIDList.dump_trec_csv(
+            retrieval_results=gathered_mined_positives,
+            fpath=os.path.join(args.output_dir, MINED_POSITIVES),
             system=args.cross_encoder,
         )
     logging.info("Done")

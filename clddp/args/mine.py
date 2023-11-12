@@ -7,16 +7,18 @@ from clddp.utils import parse_cli
 
 
 @dataclass
-class NegativeMiningArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn):
+class PassageMiningArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn):
     checkpoint_dir: Optional[str] = None  # The retriever for mining
     data_dir: Optional[str] = None
     dataloader: Optional[str] = None
     mining_dir: str = "mining"
     split: Split = Split.train
-    start_ranking: int = 26  # Keep the passages from these rankings
-    end_ranking: int = 30  # Keep the passages to these rankings
+    negative_start_ranking: int = 1  # Negative candidates from these rankings
+    negative_end_ranking: int = 30  #  Negative candidates to these rankings
+    positive_start_ranking: int = 1  #  Positive candidates from these rankings
+    positive_end_ranking: int = 10  # Positive candidates to these rankings
     cross_encoder: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    cross_encoder_margin: float = 3.0
+    cross_encoder_margin_to_negatives: float = 3.0
     per_device_eval_batch_size: int = 32
     fp16: bool = True
     query_prompt: Optional[str] = None
@@ -24,7 +26,8 @@ class NegativeMiningArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn)
 
     def __post_init__(self) -> None:
         self.split = Split(self.split)
-        assert 0 < self.start_ranking < self.end_ranking
+        assert 0 < self.negative_start_ranking < self.negative_end_ranking
+        assert 0 < self.positive_start_ranking < self.positive_end_ranking
         return super().__post_init__()
 
     @property
@@ -36,6 +39,4 @@ class NegativeMiningArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn)
 
 
 if __name__ == "__main__":
-    print(
-        parse_cli(NegativeMiningArguments).output_dir
-    )  # For creating the logging path
+    print(parse_cli(PassageMiningArguments).output_dir)  # For creating the logging path
