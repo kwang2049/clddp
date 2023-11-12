@@ -35,6 +35,7 @@ class RetrievalTrainingArguments(
     train_dataloader: Optional[str] = None
     num_negatives: int = 0  # 0 means in-batch negatives only
     negatives_path: Optional[str] = None
+    positives_path: Optional[str] = None
     dev_data: Optional[str] = None
     dev_dataloader: Optional[str] = None
     test_data: Optional[str] = None

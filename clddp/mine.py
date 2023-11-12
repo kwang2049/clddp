@@ -237,15 +237,20 @@ def main(args: Optional[PassageMiningArguments] = None):
     logging.info("Done")
 
 
-def load_negatives(
-    negatives_path: str, dataset: RetrievalDataset, split: Split, prograss_bar: bool
+def load_mined(
+    mined_path: str,
+    relevant: bool,
+    dataset: RetrievalDataset,
+    split: Split,
+    prograss_bar: bool,
 ) -> None:
     """Load the negatives and merge them into the corresponding labeled queries."""
-    logging.info("Loading negatives")
+    candidates_calling = "positives" if relevant else "negatives"
+    logging.info(f"Loading {candidates_calling}")
     labeled_queries = dataset.get_labeled_queries(split)
     qid2query = LabeledQuery.build_qid2query(labeled_queries)
     qid2pids: Dict[str, List[str]] = {}
-    with open(negatives_path) as f:
+    with open(mined_path) as f:
         for line in f:
             qid, _, pid, rank, score, system = line.strip().split()
             assert (
@@ -257,7 +262,7 @@ def load_negatives(
     pid2psg = {}
     for psg in tqdm.tqdm(
         dataset.collection_iter,
-        desc="Locating negatives in collection",
+        desc=f"Locating {candidates_calling} in collection",
         total=dataset.collection_size,
         disable=not prograss_bar,
     ):
@@ -267,11 +272,14 @@ def load_negatives(
     loaded_lqs = []
     for qid, pids in qid2pids.items():
         query = qid2query[qid]
-        negatives = [
-            JudgedPassage(query=query, passage=pid2psg[pid], judgement=0)
+        candidates = [
+            JudgedPassage(query=query, passage=pid2psg[pid], judgement=int(relevant))
             for pid in pids
         ]
-        lq = LabeledQuery(query=query, positives=[], negatives=negatives)
+        if not relevant:
+            lq = LabeledQuery(query=query, positives=[], negatives=candidates)
+        else:
+            lq = LabeledQuery(query=query, positives=candidates, negatives=[])
         loaded_lqs.append(lq)
     lqs_merged = LabeledQuery.merge(labeled_queries + loaded_lqs)
     dataset.set_labeled_queries(split=split, labeled_queries=lqs_merged)
