@@ -15,7 +15,7 @@ from clddp.args.distill import RetrievalDistillationArguments
 from clddp.retriever import RetrievalTrainingExample, Retriever, RetrieverConfig
 from clddp.utils import is_device_zero, set_logger_format, parse_cli
 from clddp.dataloader import load_dataset
-from clddp.mine import load_mined
+from clddp.mine import MiningType, load_mined
 from clddp.train import RetrievalTrainer, run
 
 
@@ -65,7 +65,7 @@ class RetrievalDistillationData(Dataset):
             for jpsg in jpsgs:
                 assert (
                     jpsg.score is not None
-                ), f"Score not loaded for passage {jpsg.passage.passage_id}"
+                ), f"Score not loaded for query {jpsg.query.query_id} passage {jpsg.passage.passage_id}"
             self.data.append(lq)
 
     def __getitem__(self, item: int) -> RetrievalDistillationExample:
@@ -118,7 +118,7 @@ def main(args: Optional[RetrievalDistillationArguments] = None):
         assert args.num_candidates
         load_mined(
             mined_path=args.distillation_path,
-            relevant=False,  # Setting to True/False does not matter here
+            mining_type=MiningType.distillation,
             dataset=train_dataset,
             split=Split.train,
             prograss_bar=is_device_zero(),

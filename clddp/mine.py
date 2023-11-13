@@ -1,4 +1,5 @@
 """Mine hard negatives."""
+from enum import Enum
 import logging
 import os
 from typing import Dict, List, Optional
@@ -281,16 +282,29 @@ def main(args: Optional[PassageMiningArguments] = None):
     logging.info("Done")
 
 
+class MiningType(str, Enum):
+    positives = "positives"
+    negatives = "negatives"
+    distillation = "distillation"
+
+    @property
+    def judgement(self) -> int:
+        return {
+            MiningType.positives: 1,
+            MiningType.negatives: 0,
+            MiningType.distillation: 0,
+        }[self]
+
+
 def load_mined(
     mined_path: str,
-    relevant: bool,
+    mining_type: MiningType,
     dataset: RetrievalDataset,
     split: Split,
     prograss_bar: bool,
 ) -> None:
     """Load the negatives and merge them into the corresponding labeled queries."""
-    candidates_calling = "positives" if relevant else "negatives"
-    logging.info(f"Loading {candidates_calling}")
+    logging.info(f"Loading {mining_type}")
     labeled_queries = dataset.get_labeled_queries(split)
     qid2query = LabeledQuery.build_qid2query(labeled_queries)
     qid2pid2score: Dict[str, Dict[str, float]] = {}
@@ -306,7 +320,7 @@ def load_mined(
     pid2psg = {}
     for psg in tqdm.tqdm(
         dataset.collection_iter,
-        desc=f"Locating {candidates_calling} in collection",
+        desc=f"Locating {mining_type} in collection",
         total=dataset.collection_size,
         disable=not prograss_bar,
     ):
@@ -318,17 +332,23 @@ def load_mined(
         query = qid2query[qid]
         candidates = [
             JudgedPassage(
-                query=query, passage=pid2psg[pid], judgement=int(relevant), score=score
+                query=query,
+                passage=pid2psg[pid],
+                judgement=mining_type.judgement,
+                score=score,
             )
             for pid, score in pid2score.items()
         ]
-        if not relevant:
+        if mining_type.judgement == 0:
             lq = LabeledQuery(query=query, positives=[], negatives=candidates)
         else:
             lq = LabeledQuery(query=query, positives=candidates, negatives=[])
         loaded_lqs.append(lq)
-    lqs_merged = LabeledQuery.merge(labeled_queries + loaded_lqs)
-    dataset.set_labeled_queries(split=split, labeled_queries=lqs_merged)
+    if mining_type is MiningType.distillation:
+        new_lqs = loaded_lqs
+    else:
+        new_lqs = LabeledQuery.merge(labeled_queries + loaded_lqs)
+    dataset.set_labeled_queries(split=split, labeled_queries=new_lqs)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ from clddp.args.train import RetrievalTrainingArguments
 from clddp.retriever import RetrievalTrainingExample, Retriever, RetrieverConfig
 from clddp.utils import is_device_zero, set_logger_format, parse_cli
 from clddp.dataloader import load_dataset
-from clddp.mine import load_mined
+from clddp.mine import MiningType, load_mined
 
 
 class RetrievalTrainer(Trainer):
@@ -231,7 +231,7 @@ def main(args: Optional[RetrievalTrainingArguments] = None):
         assert args.num_negatives
         load_mined(
             mined_path=args.negatives_path,
-            relevant=False,
+            mining_type=MiningType.negatives,
             dataset=train_dataset,
             split=Split.train,
             prograss_bar=is_device_zero(),
@@ -241,7 +241,7 @@ def main(args: Optional[RetrievalTrainingArguments] = None):
         assert train_dataset is not None
         load_mined(
             mined_path=args.positives_path,
-            relevant=True,
+            mining_type=MiningType.positives,
             dataset=train_dataset,
             split=Split.train,
             prograss_bar=is_device_zero(),
