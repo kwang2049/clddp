@@ -33,7 +33,7 @@ class RetrievalDistillationArguments(
     # Data-related:
     train_data: Optional[str] = None
     train_dataloader: Optional[str] = None
-    num_candidates: int = 10
+    num_candidates: int = 30
     distillation_path: Optional[str] = None
     dev_data: Optional[str] = None
     dev_dataloader: Optional[str] = None
