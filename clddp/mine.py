@@ -71,6 +71,7 @@ RETRIEVAL_RESULTS = "retrieval_results.txt"
 MINED_WITHOUT_FILTERING = "mined_without_filtering.txt"
 MINED_WITH_FILTERING = "mined_with_filtering.txt"
 MINED_POSITIVES = "mined_positives.txt"
+DISTILLATION = "distillation.txt"
 
 
 def main(args: Optional[PassageMiningArguments] = None):
@@ -130,12 +131,15 @@ def main(args: Optional[PassageMiningArguments] = None):
             system="retriever",
         )
 
-    # Do filtering with the cross-encoder:
+    # Go over the collection to build the pid2psg map:
+    qid2positives = LabeledQuery.build_qid2positives(labeled_queries)
     pids = {
         spid.passage_id
         for rr in positive_candidates + negative_candidates
         for spid in rr.scored_passage_ids
     }
+    for positives in qid2positives.values():
+        pids = pids.union({pos.passage.passage_id for pos in positives})
     pid2psg: Dict[str, Passage] = {}
     for psg in tqdm.tqdm(
         dataset.collection_iter,
@@ -146,11 +150,13 @@ def main(args: Optional[PassageMiningArguments] = None):
         if psg.passage_id not in pids:
             continue
         pid2psg[psg.passage_id] = psg
-    qid2positives = LabeledQuery.build_qid2positives(labeled_queries)
+
+    # Do filtering with the cross-encoder:
     qid2query = LabeledQuery.build_qid2query(labeled_queries)
     cross_encoder = CrossEncoder(args.cross_encoder)
     mined_negatives: List[RetrievedPassageIDList] = []
     mined_positives: List[RetrievedPassageIDList] = []
+    distillation: List[RetrievedPassageIDList] = []
     for positive_candidates_rr, negative_candidates_rr in tqdm.tqdm(
         zip(split_data(positive_candidates), split_data(negative_candidates)),
         desc="Filtering passages",
@@ -162,7 +168,8 @@ def main(args: Optional[PassageMiningArguments] = None):
         query = qid2query[positive_candidates_rr.query_id]
         if query.query_id not in qid2positives:
             if args.default_positive_threshold is None:
-                continue
+                if not args.for_distillation:
+                    continue
             else:
                 avg_positive_score = args.default_positive_threshold
                 positive_ids = set()
@@ -186,6 +193,11 @@ def main(args: Optional[PassageMiningArguments] = None):
             if spid.passage_id not in positive_ids
         ]
         candidate_passages = negative_candidate_passages + positive_candidate_passages
+        candidate_passages = list(
+            {psg.passage_id: psg for psg in candidate_passages}.values()
+        )
+        if args.for_distillation:
+            candidate_passages.extend([pid2psg[pid] for pid in positive_ids])
         scores = score_query_passages(
             cross_encoder=cross_encoder,
             query=query,
@@ -194,6 +206,21 @@ def main(args: Optional[PassageMiningArguments] = None):
         pid2score = {
             psg.passage_id: score for psg, score in zip(candidate_passages, scores)
         }
+
+        # Record the scores for distillation:
+        if args.for_distillation:
+            scored = [
+                ScoredPassageID(passage_id=pid, score=score)
+                for pid, score in pid2score.items()
+            ]
+            sorted_scored = sorted(scored, key=lambda spid: spid.score, reverse=True)
+            distillation.append(
+                RetrievedPassageIDList(
+                    query_id=query.query_id,
+                    scored_passage_ids=sorted_scored,
+                )
+            )
+            continue
 
         # Go over the negative candidates and do filtering:
         mined_negative_passage_ids = []
@@ -228,6 +255,7 @@ def main(args: Optional[PassageMiningArguments] = None):
             )
     gathered_mined_negatives = sum(all_gather_object(mined_negatives), [])
     gathered_mined_positives = sum(all_gather_object(mined_positives), [])
+    gathered_distillation = sum(all_gather_object(distillation), [])
     if is_device_zero():
         RetrievedPassageIDList.dump_trec_csv(
             retrieval_results=gathered_mined_negatives,
@@ -237,6 +265,11 @@ def main(args: Optional[PassageMiningArguments] = None):
         RetrievedPassageIDList.dump_trec_csv(
             retrieval_results=gathered_mined_positives,
             fpath=os.path.join(args.output_dir, MINED_POSITIVES),
+            system=args.cross_encoder,
+        )
+        RetrievedPassageIDList.dump_trec_csv(
+            retrieval_results=gathered_distillation,
+            fpath=os.path.join(args.output_dir, DISTILLATION),
             system=args.cross_encoder,
         )
     logging.info("Done")

@@ -15,6 +15,7 @@ class PassageMiningArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn):
     split: Split = Split.train
     negative_start_ranking: int = 1  # Negative candidates from these rankings
     negative_end_ranking: int = 30  #  Negative candidates to these rankings
+    for_distillation: bool = False  # If set, will score all candidates for every query
     positive_start_ranking: int = 1  #  Positive candidates from these rankings
     positive_end_ranking: int = 10  # Positive candidates to these rankings
     cross_encoder: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
