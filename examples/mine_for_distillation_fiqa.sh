@@ -12,7 +12,7 @@ export CLI_ARGS="
 "
 python -m clddp.retriever $CLI_ARGS
 
-# Run hard-negative mining:
+# Run mining for distillation:
 dataset="fiqa"
 export DATA_DIR="data"
 export DATASET_PATH="$DATA_DIR/$dataset"
@@ -35,7 +35,4 @@ export OUTPUT_DIR=$(python -m clddp.args.mine $CLI_ARGS)
 mkdir -p $OUTPUT_DIR
 export LOG_PATH="$OUTPUT_DIR/logging.log"
 echo "Logging file path: $LOG_PATH"
-# nohup torchrun --nproc_per_node=2 --master_port=29501 -m clddp.mine $CLI_ARGS > $LOG_PATH &
-
-export CUDA_VISIBLE_DEVICES="5"
-torchrun --nproc_per_node=1 --master_port=29501 -m clddp.mine $CLI_ARGS
+nohup torchrun --nproc_per_node=2 --master_port=29501 -m clddp.mine $CLI_ARGS > $LOG_PATH &

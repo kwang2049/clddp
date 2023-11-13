@@ -287,16 +287,16 @@ def load_mined(
     logging.info(f"Loading {candidates_calling}")
     labeled_queries = dataset.get_labeled_queries(split)
     qid2query = LabeledQuery.build_qid2query(labeled_queries)
-    qid2pids: Dict[str, List[str]] = {}
+    qid2pid2score: Dict[str, Dict[str, float]] = {}
     with open(mined_path) as f:
         for line in f:
             qid, _, pid, rank, score, system = line.strip().split()
             assert (
                 qid in qid2query
             ), f"The mining results contain query ID not belonging to the {split} split"
-            qid2pids.setdefault(qid, [])
-            qid2pids[qid].append(pid)
-    pids = {pid for passage_ids in qid2pids.values() for pid in passage_ids}
+            qid2pid2score.setdefault(qid, {})
+            qid2pid2score[qid][pid] = float(score)
+    pids = {pid for pid2scores in qid2pid2score.values() for pid in pid2scores}
     pid2psg = {}
     for psg in tqdm.tqdm(
         dataset.collection_iter,
@@ -308,11 +308,13 @@ def load_mined(
             continue
         pid2psg[psg.passage_id] = psg
     loaded_lqs = []
-    for qid, pids in qid2pids.items():
+    for qid, pid2score in qid2pid2score.items():
         query = qid2query[qid]
         candidates = [
-            JudgedPassage(query=query, passage=pid2psg[pid], judgement=int(relevant))
-            for pid in pids
+            JudgedPassage(
+                query=query, passage=pid2psg[pid], judgement=int(relevant), score=score
+            )
+            for pid, score in pid2score.items()
         ]
         if not relevant:
             lq = LabeledQuery(query=query, positives=[], negatives=candidates)

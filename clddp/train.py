@@ -107,7 +107,7 @@ class RetrievalTrainingData(Dataset):
 def run(
     retriever: Retriever,
     args: RetrievalTrainingArguments,
-    training_data: Optional[RetrievalTrainingData] = None,
+    training_data: Optional[Dataset] = None,
     dev_dataset: Optional[RetrievalDataset] = None,
     test_dataset: Optional[RetrievalDataset] = None,
 ) -> None:

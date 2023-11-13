@@ -29,6 +29,7 @@ class JudgedPassage:
     query: Query
     passage: Passage
     judgement: int
+    score: Optional[float] = None
 
 
 @dataclass
@@ -44,6 +45,12 @@ class LabeledQuery:
             jpsg.query.query_id == self.query.query_id
             for jpsg in self.positives + self.negatives
         )
+
+    def get_unique_candidates(self) -> List[JudgedPassage]:
+        pid2jpsg = {
+            jpsg.passage.passage_id: jpsg for jpsg in self.positives + self.negatives
+        }
+        return list(pid2jpsg.values())
 
     @staticmethod
     def build_qrels(labeled_queries: List[LabeledQuery]) -> Dict[str, Dict[str, int]]:
