@@ -19,6 +19,7 @@ class PassageMiningArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn):
     positive_end_ranking: int = 10  # Positive candidates to these rankings
     cross_encoder: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     cross_encoder_margin_to_negatives: float = 3.0
+    default_positive_threshold: Optional[float] = None  # 7.0
     per_device_eval_batch_size: int = 32
     fp16: bool = True
     query_prompt: Optional[str] = None

@@ -161,13 +161,18 @@ def main(args: Optional[PassageMiningArguments] = None):
         assert positive_candidates_rr.query_id == negative_candidates_rr.query_id
         query = qid2query[positive_candidates_rr.query_id]
         if query.query_id not in qid2positives:
-            continue
-        positives = [jpsg.passage for jpsg in qid2positives[query.query_id]]
-        positive_scores = score_query_passages(
-            cross_encoder=cross_encoder, query=query, passages=positives
-        )
-        avg_positive_score = np.mean(positive_scores)
-        positive_ids = {psg.passage_id for psg in positives}
+            if args.default_positive_threshold is None:
+                continue
+            else:
+                avg_positive_score = args.default_positive_threshold
+                positive_ids = set()
+        else:
+            positives = [jpsg.passage for jpsg in qid2positives[query.query_id]]
+            positive_scores = score_query_passages(
+                cross_encoder=cross_encoder, query=query, passages=positives
+            )
+            avg_positive_score = np.mean(positive_scores)
+            positive_ids = {psg.passage_id for psg in positives}
 
         # Compute the scores:
         negative_candidate_passages = [
