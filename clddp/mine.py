@@ -138,8 +138,12 @@ def main(args: Optional[PassageMiningArguments] = None):
         for rr in positive_candidates + negative_candidates
         for spid in rr.scored_passage_ids
     }
-    for positives in qid2positives.values():
-        pids = pids.union({pos.passage.passage_id for pos in positives})
+    gold_positive_pids = {
+        pos.passage.passage_id
+        for positives in qid2positives.values()
+        for pos in positives
+    }
+    pids = pids.union(gold_positive_pids)
     pid2psg: Dict[str, Passage] = {}
     for psg in tqdm.tqdm(
         dataset.collection_iter,
@@ -166,10 +170,12 @@ def main(args: Optional[PassageMiningArguments] = None):
         # First calculate the scores of the labeled positives as the baseline:
         assert positive_candidates_rr.query_id == negative_candidates_rr.query_id
         query = qid2query[positive_candidates_rr.query_id]
-        if query.query_id not in qid2positives:
+        if query.query_id not in qid2positives:  # Some querys have no labeled positives
             if args.default_positive_threshold is None:
                 if not args.for_distillation:
                     continue
+                else:
+                    positive_ids = set()
             else:
                 avg_positive_score = args.default_positive_threshold
                 positive_ids = set()
