@@ -42,7 +42,7 @@ class RetrievalDistillationArguments(
 
     # General training hyperparameters:
     do_train: bool = True
-    per_device_train_batch_size: int = 64
+    per_device_train_batch_size: int = 4
     gradient_accumulation_steps: int = 1
     per_device_eval_batch_size: int = 32
     learning_rate: int = 2e-5
