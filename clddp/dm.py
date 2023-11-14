@@ -57,7 +57,7 @@ class LabeledQuery:
         """Build the qrels for trec_eval https://github.com/cvangysel/pytrec_eval."""
         qrels = {}
         for lq in labeled_queries:
-            for jpsg in lq.positives:
+            for jpsg in lq.positives:  # Ingore queries without positives
                 qrels.setdefault(jpsg.query.query_id, {})
                 qrels[jpsg.query.query_id][jpsg.passage.passage_id] = jpsg.judgement
         return qrels
@@ -206,7 +206,7 @@ class RetrievedPassageIDList:
             for line in f:
                 qid, _, pid, rank, score, system = line.strip().split()
                 qid2pid2score.setdefault(qid, {})
-                qid2pid2score[qid][pid] = score
+                qid2pid2score[qid][pid] = float(score)
         loaded: List[cls] = []
         for qid, pid2score in qid2pid2score.items():
             scored: List[ScoredPassageID] = []
