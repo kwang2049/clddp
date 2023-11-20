@@ -71,6 +71,8 @@ class RerankingTrainingArguments(
             "train_dataloader",
             "dev_dataloader",
             "test_dataloader",
+            "dev_retrieval_results",
+            "test_retrieval_results"
         }
 
     def __post_init__(self) -> None:
