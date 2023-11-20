@@ -24,7 +24,7 @@ from transformers import (
 from transformers.models.auto.modeling_auto import MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
 import torch.distributed as dist
-from clddp.dm import Passage, Query
+from clddp.dm import Passage, Query, Separator
 from clddp.utils import dist_gather_tensor, colbert_score, parse_cli, set_logger_format
 
 MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES[
@@ -169,26 +169,6 @@ class RetrievalTrainingExample:
     passages: List[Passage]  # (1 positive + n negatives)
 
 
-class Separator(str, Enum):
-    bert_sep = "bert_sep"
-    roberta_sep = "roberta_sep"
-    blank = "blank"
-    empty = "empty"
-
-    @property
-    def token(self) -> str:
-        return {
-            Separator.bert_sep: "[SEP]",
-            Separator.roberta_sep: "</s>",
-            Separator.blank: " ",
-            Separator.empty: "",
-        }[self]
-
-    def concat(self, texts: Iterator[Optional[str]]) -> str:
-        """Concatenate two pieces of texts with the separation symbol."""
-        return self.token.join(filter(lambda text: text is not None, texts))
-
-
 @dataclass
 class RetrieverConfig:
     query_model_name_or_path: str
@@ -309,7 +289,9 @@ class Retriever(torch.nn.Module):
             batch_size=batch_size,
         )
 
-    def forward(self, examples: List[RetrievalTrainingExample]) -> torch.Tensor:
+    def forward(
+        self, examples: List[RetrievalTrainingExample]
+    ) -> Dict[str, torch.Tensor]:
         queries = [e.query for e in examples]
         passages = list(chain(*(e.passages for e in examples)))
         qembs = self.encode_queries(queries)  # (bsz, hdim)

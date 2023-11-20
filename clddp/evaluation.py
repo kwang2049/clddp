@@ -3,17 +3,20 @@ import json
 import logging
 import os
 from typing import Dict, List, Optional, Tuple
+from clddp.reranker import Reranker, RerankerInputExample
 import numpy as np
 import pytrec_eval
 from clddp.dm import (
     LabeledQuery,
+    Passage,
     RetrievalDataset,
     RetrievedPassageIDList,
+    ScoredPassageID,
     Split,
 )
 from clddp.dataloader import load_dataset
 from clddp.retriever import Retriever
-from clddp.search import search
+from clddp.search import rerank, search
 import torch.distributed as dist
 from clddp.utils import (
     get_rank,
@@ -24,6 +27,8 @@ from clddp.utils import (
 )
 from clddp.args.evaluation import EvaluationArguments
 from transformers import HfArgumentParser
+import tqdm
+import torch
 
 
 class RetrievalMetric(str, Enum):
@@ -147,6 +152,41 @@ def search_and_evaluate(
     return rpidls, report_prefixed
 
 
+def rerank_and_evaluate(
+    retrieval_results: List[RetrievedPassageIDList],
+    reranker: Reranker,
+    eval_dataset: RetrievalDataset,
+    split: Split,
+    per_device_eval_batch_size: int,
+    fp16: bool,
+    metric_key_prefix: str = "eval",
+) -> Tuple[List[RetrievedPassageIDList], Dict[str, float]]:
+    # Build evaluator and do search:
+    queries = LabeledQuery.get_unique_queries(eval_dataset.get_labeled_queries(split))
+    reranked = rerank(
+        retrieval_results=retrieval_results,
+        reranker=reranker,
+        collection_iter=eval_dataset.collection_iter,
+        collection_size=eval_dataset.collection_size,
+        queries=queries,
+        per_device_eval_batch_size=per_device_eval_batch_size,
+        fp16=fp16,
+    )
+
+    # Calculate scores:
+    evaluator = RetrievalEvaluator(eval_dataset=eval_dataset, split=split)
+    report = evaluator(reranked)
+    report_prefixed = {}
+    for k, v in report.items():
+        report_prefixed[f"{metric_key_prefix}_{k}"] = v  # Required by HF's trainer
+
+    if dist.is_initialized():
+        dist.barrier()
+
+    logging.info(f"Evaluation results: {report_prefixed}")
+    return reranked, report_prefixed
+
+
 def main(args: Optional[EvaluationArguments] = None):
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
@@ -163,7 +203,7 @@ def main(args: Optional[EvaluationArguments] = None):
     eval_dataset = load_dataset(
         enable=True, dataloader_name=args.dataloader, data_name_or_path=args.data_dir
     )
-    retrieval_results, report = search_and_evaluate(
+    ranking_results, report = search_and_evaluate(
         retriever=retriever,
         eval_dataset=eval_dataset,
         split=args.split,
@@ -171,10 +211,22 @@ def main(args: Optional[EvaluationArguments] = None):
         per_device_eval_batch_size=args.per_device_eval_batch_size,
         fp16=args.fp16,
     )
-    fretrieved = os.path.join(args.output_dir, "retrieval_results.txt")
+    system = "retriever"
+    if args.reranker_checkpoint_dir:
+        reranker = Reranker.from_pretrained(args.reranker_checkpoint_dir)
+        ranking_results, report = rerank_and_evaluate(
+            retrieval_results=ranking_results,
+            reranker=reranker,
+            eval_dataset=eval_dataset,
+            split=args.split,
+            per_device_eval_batch_size=args.per_device_eval_batch_size,
+            fp16=args.fp16,
+        )
+        system = "retriever+reranker"
+    franked = os.path.join(args.output_dir, "ranking_results.txt")
     if is_device_zero():
         RetrievedPassageIDList.dump_trec_csv(
-            retrieval_results=retrieval_results, fpath=fretrieved
+            retrieval_results=ranking_results, fpath=franked, system=system
         )
         freport = os.path.join(args.output_dir, "metrics.json")
         with open(freport, "w") as f:

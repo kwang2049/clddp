@@ -9,6 +9,7 @@ from clddp.utils import parse_cli
 @dataclass
 class SearchArguments(AutoRunNameArgumentsMixIn, DumpableArgumentsMixIn):
     checkpoint_dir: Optional[str] = None
+    reranker_checkpoint_dir: Optional[str] = None
     data_dir: Optional[str] = None
     dataloader: Optional[str] = None
     search_dir: str = "search"

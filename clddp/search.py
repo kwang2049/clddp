@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import logging
 import os
 from typing import Dict, Iterable, List, Optional, Type
+from clddp.reranker import Reranker, RerankerInputExample
 from more_itertools import chunked
 import torch
 import tqdm
@@ -189,6 +190,74 @@ def search(
     return merged_rpidls
 
 
+def rerank(
+    retrieval_results: List[RetrievedPassageIDList],
+    reranker: Reranker,
+    collection_iter: Iterable[Passage],
+    collection_size: int,
+    queries: List[Query],
+    per_device_eval_batch_size: int,
+    fp16: bool,
+) -> List[RetrievedPassageIDList]:
+    # Prepare the data:
+    qid2query = {q.query_id: q for q in queries}
+    pids = {
+        spid.passage_id
+        for rpidl in retrieval_results
+        for spid in rpidl.scored_passage_ids
+    }
+    pid2psg = {}
+    for psg in tqdm.tqdm(
+        collection_iter,
+        total=collection_size,
+        desc="Locating passages",
+        disable=not is_device_zero(),
+    ):
+        if psg.passage_id in pids:
+            pid2psg[psg.passage_id] = psg
+    split_retrieval_results_iter = split_data(data=retrieval_results)
+    split_retrieval_results_size = split_data_size(len(retrieval_results))
+
+    # Reranking:
+    reranked: List[RetrievedPassageIDList] = []
+    for rpidl in tqdm.tqdm(
+        split_retrieval_results_iter,
+        total=split_retrieval_results_size,
+        desc="Reranking",
+        disable=not is_device_zero(),
+    ):
+        query = qid2query[rpidl.query_id]
+        candidates: List[Passage] = [
+            pid2psg[spid.passage_id] for spid in rpidl.scored_passage_ids
+        ]
+        scores = []
+        for b in range(0, len(candidates), per_device_eval_batch_size):
+            e = b + per_device_eval_batch_size
+            batch_candidates = candidates[b:e]
+            batch = RerankerInputExample(query=query, passages=batch_candidates)
+            with torch.cuda.amp.autocast(enabled=fp16):
+                batch_scores = (
+                    reranker.predict([batch]).squeeze().tolist()
+                )  # (batch_size,)
+            scores.extend(batch_scores)
+        scored_passage_ids = [
+            ScoredPassageID(passage_id=psg.passage_id, score=score)
+            for psg, score in zip(candidates, scores)
+        ]
+        reranked_rpidl = RetrievedPassageIDList(
+            query_id=query.query_id, scored_passage_ids=scored_passage_ids
+        )
+        reranked.append(reranked_rpidl)
+    reranked = sum(all_gather_object(reranked), [])
+
+    # Sort back to the original order wrt. the query IDs:
+    qid2reranking_result = {rpidl.query_id: rpidl for rpidl in reranked}
+    sorted_reranked = [
+        qid2reranking_result[rpidl.query_id] for rpidl in retrieval_results
+    ]
+    return sorted_reranked
+
+
 def main(args: Optional[SearchArguments] = None):
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
@@ -208,7 +277,7 @@ def main(args: Optional[SearchArguments] = None):
     )
     labeled_queries = dataset.get_labeled_queries(args.split)
     queries = LabeledQuery.get_unique_queries(labeled_queries)
-    retrieval_results = search(
+    ranking_results = search(
         retriever=retriever,
         collection_iter=dataset.collection_iter,
         collection_size=dataset.collection_size,
@@ -217,10 +286,24 @@ def main(args: Optional[SearchArguments] = None):
         per_device_eval_batch_size=args.per_device_eval_batch_size,
         fp16=args.fp16,
     )
+    system = "retriever"
+    if args.reranker_checkpoint_dir:
+        reranker = Reranker.from_pretrained(args.reranker_checkpoint_dir)
+        ranking_results = rerank(
+            retrieval_results=ranking_results,
+            reranker=reranker,
+            collection_iter=dataset.collection_iter,
+            collection_size=dataset.collection_size,
+            queries=queries,
+            per_device_eval_batch_size=args.per_device_eval_batch_size,
+            fp16=args.fp16,
+        )
+        system = "retriever+reranker"
+
     if is_device_zero():
-        fretrieved = os.path.join(args.output_dir, "retrieval_results.txt")
+        franked = os.path.join(args.output_dir, "ranking_results.txt")
         RetrievedPassageIDList.dump_trec_csv(
-            retrieval_results=retrieval_results, fpath=fretrieved
+            retrieval_results=ranking_results, fpath=franked, system=system
         )
     logging.info("Done")
 

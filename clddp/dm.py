@@ -6,7 +6,7 @@ from enum import Enum
 import json
 import logging
 import random
-from typing import Callable, Dict, Iterable, List, Optional, Type
+from typing import Callable, Dict, Iterable, Iterator, List, Optional, Type
 
 import tqdm
 
@@ -22,6 +22,26 @@ class Passage:
 class Query:
     query_id: str
     text: str
+
+
+class Separator(str, Enum):
+    bert_sep = "bert_sep"
+    roberta_sep = "roberta_sep"
+    blank = "blank"
+    empty = "empty"
+
+    @property
+    def token(self) -> str:
+        return {
+            Separator.bert_sep: "[SEP]",
+            Separator.roberta_sep: "</s>",
+            Separator.blank: " ",
+            Separator.empty: "",
+        }[self]
+
+    def concat(self, texts: Iterator[Optional[str]]) -> str:
+        """Concatenate two pieces of texts with the separation symbol."""
+        return self.token.join(filter(lambda text: text is not None, texts))
 
 
 @dataclass
