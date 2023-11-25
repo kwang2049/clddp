@@ -2,7 +2,7 @@ from enum import Enum
 import json
 import logging
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 from clddp.reranker import Reranker, RerankerInputExample
 import numpy as np
 import pytrec_eval
@@ -187,7 +187,9 @@ def rerank_and_evaluate(
     return reranked, report_prefixed
 
 
-def main(args: Optional[EvaluationArguments] = None):
+def main(
+    args: Optional[EvaluationArguments] = None,
+) -> Union[List[RetrievedPassageIDList], Dict[str, float]]:
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
     args = parse_cli(EvaluationArguments)
@@ -233,6 +235,7 @@ def main(args: Optional[EvaluationArguments] = None):
             json.dump(report, f, indent=4)
         logging.info(f"Saved evaluation metrics to {freport}.")
     logging.info("Done")
+    return ranking_results, report
 
 
 if __name__ == "__main__":

@@ -197,7 +197,7 @@ def run(
             wandb.finish()
 
 
-def main(args: Optional[RetrievalTrainingArguments] = None):
+def main(args: Optional[RetrievalTrainingArguments] = None) -> Retriever:
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     if args is None:
         args = parse_cli(RetrievalTrainingArguments)
@@ -298,6 +298,7 @@ def main(args: Optional[RetrievalTrainingArguments] = None):
         test_dataset=test_dataset,
     )
     logging.info("Done")
+    return Retriever
 
 
 if __name__ == "__main__":

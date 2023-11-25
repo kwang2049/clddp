@@ -258,7 +258,7 @@ def rerank(
     return sorted_reranked
 
 
-def main(args: Optional[SearchArguments] = None):
+def main(args: Optional[SearchArguments] = None) -> List[RetrievedPassageIDList]:
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
     if args is None:
@@ -306,6 +306,7 @@ def main(args: Optional[SearchArguments] = None):
             retrieval_results=ranking_results, fpath=franked, system=system
         )
     logging.info("Done")
+    return ranking_results
 
 
 if __name__ == "__main__":

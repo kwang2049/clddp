@@ -2,7 +2,7 @@
 from enum import Enum
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 import numpy as np
 
 import tqdm
@@ -75,7 +75,13 @@ MINED_POSITIVES = "mined_positives.txt"
 DISTILLATION = "distillation.txt"
 
 
-def main(args: Optional[PassageMiningArguments] = None):
+def main(
+    args: Optional[PassageMiningArguments] = None,
+) -> Union[
+    List[RetrievedPassageIDList],
+    List[RetrievedPassageIDList],
+    List[RetrievedPassageIDList],
+]:
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     initialize_ddp()
     if args is None:
@@ -280,6 +286,7 @@ def main(args: Optional[PassageMiningArguments] = None):
             system=args.cross_encoder,
         )
     logging.info("Done")
+    return gathered_mined_negatives, gathered_mined_positives, gathered_distillation
 
 
 class MiningType(str, Enum):

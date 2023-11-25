@@ -84,7 +84,7 @@ class RetrievalDistillationData(Dataset):
         return len(self.data)
 
 
-def main(args: Optional[RetrievalDistillationArguments] = None):
+def main(args: Optional[RetrievalDistillationArguments] = None) -> Retriever:
     set_logger_format(logging.INFO if is_device_zero() else logging.WARNING)
     if args is None:
         args = parse_cli(RetrievalDistillationArguments)
@@ -175,6 +175,7 @@ def main(args: Optional[RetrievalDistillationArguments] = None):
         test_dataset=test_dataset,
     )
     logging.info("Done")
+    return Retriever
 
 
 if __name__ == "__main__":
