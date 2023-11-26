@@ -45,26 +45,26 @@ def pairwise_maxsim(
 
 def maxsim(
     qembs: torch.Tensor,
-    cembs: torch.Tensor,
-    cmask: torch.BoolTensor,
+    pembs: torch.Tensor,
+    pmask: torch.BoolTensor,
     batch_size_query: int = 1024,
     batch_size_passage: int = 16,
 ) -> torch.Tensor:
-    assert cmask is not None
+    assert pmask is not None
     scores = []
     for bq in range(0, len(qembs), batch_size_query):
         eq = bq + batch_size_query
         qbatch = qembs[bq:eq]
         scores_qbatch = []
-        for bc in range(0, len(cembs), batch_size_passage):
+        for bc in range(0, len(pembs), batch_size_passage):
             ec = bc + batch_size_passage
-            scores_4d = cembs[None, bc:ec] @ qbatch[:, None].to(
-                dtype=cembs.dtype
+            scores_4d = pembs[None, bc:ec] @ qbatch[:, None].to(
+                dtype=pembs.dtype
             ).transpose(
                 2, 3
             )  # (nqueries, npassages, passage_length, query_length)
             scores_4d += (
-                ~cmask[None, bc:ec] * -9999
+                ~pmask[None, bc:ec] * -9999
             )  # (npassages, passage_length, 1) -> (1, npassages, passage_length, 1)
             scores_4d_max: torch.Tensor = scores_4d.max(dim=2)[
                 0
