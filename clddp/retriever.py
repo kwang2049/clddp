@@ -208,15 +208,14 @@ class Retriever(torch.nn.Module):
         super().__init__()
         self.config = config
         self.tokenizer = AutoTokenizer.from_pretrained(config.query_model_name_or_path)
-        auto_model_class = self.get_auto_model_class(config)
-        self.query_encoder: PreTrainedModel = auto_model_class.from_pretrained(
-            config.query_model_name_or_path
+        self.query_encoder: PreTrainedModel = self.load_checkpoint(
+            model_name_or_path=config.query_model_name_or_path, config=config
         )
         self.passage_encoder = self.query_encoder
         if not config.shared_encoder:
             assert config.passage_model_name_or_path is not None
-            self.passage_encoder: PreTrainedModel = auto_model_class.from_pretrained(
-                config.passage_model_name_or_path
+            self.passage_encoder: PreTrainedModel = self.load_checkpoint(
+                model_name_or_path=config.passage_model_name_or_path, config=config
             )
         self.sep = Separator(config.sep)
         self.pooling = Pooling(config.pooling)
@@ -227,11 +226,13 @@ class Retriever(torch.nn.Module):
         self.passage_prompt: Optional[str] = None
 
     @staticmethod
-    def get_auto_model_class(config: RetrieverConfig) -> _BaseAutoModelClass:
+    def load_checkpoint(
+        model_name_or_path: str, config: RetrieverConfig
+    ) -> PreTrainedModel:
         if config.pooling is Pooling.splade:
-            return AutoModelForMaskedLM
+            return AutoModelForMaskedLM.from_pretrained(model_name_or_path)
         else:
-            return AutoModelForTextEncoding
+            return AutoModelForTextEncoding.from_pretrained(model_name_or_path)
 
     def set_query_prompt(self, prompt: str) -> None:
         self.query_prompt = prompt.replace(self.PROMPT_SPACE_TOKEN, " ")
@@ -340,12 +341,16 @@ class Retriever(torch.nn.Module):
         with open(os.path.join(checkpoint_dir, cls.CONFIG_FNAME)) as f:
             config = RetrieverConfig(**json.load(f))
         retriever = cls(config)
-        auto_model_class = cls.get_auto_model_class(config)
-        retriever.query_encoder = auto_model_class.from_pretrained(checkpoint_dir)
+        retriever.query_encoder = cls.load_checkpoint(
+            model_name_or_path=checkpoint_dir, config=config
+        )
         retriever.passage_encoder = retriever.query_encoder
         if not config.shared_encoder:
-            retriever.passage_encoder = auto_model_class.from_pretrained(
-                os.path.join(checkpoint_dir, cls.SEPARATE_PASSAGE_ENCODER)
+            retriever.passage_encoder = cls.load_checkpoint(
+                model_name_or_path=os.path.join(
+                    checkpoint_dir, cls.SEPARATE_PASSAGE_ENCODER
+                ),
+                config=config,
             )
         retriever.set_device("cuda" if torch.cuda.is_available() else "cpu")
         logging.info(f"Loaded from {checkpoint_dir}")
