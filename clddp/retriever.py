@@ -7,7 +7,7 @@ from itertools import chain
 import json
 import logging
 import os
-from typing import Any, Dict, Iterator, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 import torch
 from sentence_transformers.util import (
     cos_sim,
@@ -17,11 +17,15 @@ from sentence_transformers.util import (
 )
 from transformers import (
     AutoModelForTextEncoding,
+    AutoModelForMaskedLM,
     AutoTokenizer,
     PreTrainedModel,
     BatchEncoding,
 )
-from transformers.models.auto.modeling_auto import MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES
+from transformers.models.auto.modeling_auto import (
+    MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES,
+    _BaseAutoModelClass,
+)
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
 import torch.distributed as dist
 from clddp.dm import Passage, Query, Separator
@@ -107,6 +111,7 @@ class Pooling(str, Enum):
             ] = -1e9  # Set padding tokens to large negative value
             return torch.max(token_embeddings, 1)[0]
         elif self == Pooling.splade:
+            # Here token_embeddings are actual logits (bsz, seq_len, vocab_size)
             pooled: torch.Tensor = getattr(
                 torch.max(
                     torch.log(1 + torch.relu(token_embeddings))
@@ -203,16 +208,15 @@ class Retriever(torch.nn.Module):
         super().__init__()
         self.config = config
         self.tokenizer = AutoTokenizer.from_pretrained(config.query_model_name_or_path)
-        self.query_encoder: PreTrainedModel = AutoModelForTextEncoding.from_pretrained(
+        auto_model_class = self.get_auto_model_class(config)
+        self.query_encoder: PreTrainedModel = auto_model_class.from_pretrained(
             config.query_model_name_or_path
         )
         self.passage_encoder = self.query_encoder
         if not config.shared_encoder:
             assert config.passage_model_name_or_path is not None
-            self.passage_encoder: PreTrainedModel = (
-                AutoModelForTextEncoding.from_pretrained(
-                    config.passage_model_name_or_path
-                )
+            self.passage_encoder: PreTrainedModel = auto_model_class.from_pretrained(
+                config.passage_model_name_or_path
             )
         self.sep = Separator(config.sep)
         self.pooling = Pooling(config.pooling)
@@ -221,6 +225,13 @@ class Retriever(torch.nn.Module):
         self.set_device("cuda" if torch.cuda.is_available() else "cpu")
         self.query_prompt: Optional[str] = None
         self.passage_prompt: Optional[str] = None
+
+    @staticmethod
+    def get_auto_model_class(config: RetrieverConfig) -> _BaseAutoModelClass:
+        if config.pooling is Pooling.splade:
+            return AutoModelForMaskedLM
+        else:
+            return AutoModelForTextEncoding
 
     def set_query_prompt(self, prompt: str) -> None:
         self.query_prompt = prompt.replace(self.PROMPT_SPACE_TOKEN, " ")
@@ -254,9 +265,9 @@ class Retriever(torch.nn.Module):
                 return_tensors="pt",
                 max_length=self.max_length,
             ).to(self.device)
-            outputs: BaseModelOutputWithPoolingAndCrossAttentions = encoder(**tokenized)
+            token_embeddings: torch.Tensor = encoder(**tokenized, return_dict=False)[0]
             pooled = self.pooling(
-                token_embeddings=outputs.last_hidden_state,
+                token_embeddings=token_embeddings,
                 attention_mask=tokenized["attention_mask"],
             )  # (bsz, hdim)
             encoded_list.append(pooled)
@@ -329,12 +340,11 @@ class Retriever(torch.nn.Module):
         with open(os.path.join(checkpoint_dir, cls.CONFIG_FNAME)) as f:
             config = RetrieverConfig(**json.load(f))
         retriever = cls(config)
-        retriever.query_encoder = AutoModelForTextEncoding.from_pretrained(
-            checkpoint_dir
-        )
+        auto_model_class = cls.get_auto_model_class(config)
+        retriever.query_encoder = auto_model_class.from_pretrained(checkpoint_dir)
         retriever.passage_encoder = retriever.query_encoder
         if not config.shared_encoder:
-            retriever.passage_encoder = AutoModelForTextEncoding.from_pretrained(
+            retriever.passage_encoder = auto_model_class.from_pretrained(
                 os.path.join(checkpoint_dir, cls.SEPARATE_PASSAGE_ENCODER)
             )
         retriever.set_device("cuda" if torch.cuda.is_available() else "cpu")
