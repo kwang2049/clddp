@@ -145,6 +145,10 @@ class ScoredPassageID:
     passage_id: str
     score: float
 
+    @staticmethod
+    def build_pid2score(scored_passage_ids: List[ScoredPassageID]) -> Dict[str, float]:
+        return {spid.passage_id: spid.score for spid in scored_passage_ids}
+
 
 @dataclass
 class RetrievedPassageIDList:
@@ -156,9 +160,7 @@ class RetrievedPassageIDList:
         retrieved: List[RetrievedPassageIDList],
     ) -> Dict[str, Dict[str, float]]:
         trec_scores = {
-            rpidl.query_id: {
-                spid.passage_id: spid.score for spid in rpidl.scored_passage_ids
-            }
+            rpidl.query_id: ScoredPassageID.build_pid2score(rpidl.scored_passage_ids)
             for rpidl in retrieved
         }
         return trec_scores
