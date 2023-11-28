@@ -277,6 +277,19 @@ class RetrievalDataset:
             assert split is Split.test
             self.test_labeled_queries = labeled_queries
 
+    def get_passages(self, pids: List[str], progress_bar: bool) -> List[Passage]:
+        pids_set = set(pids)
+        pid2passage = {}
+        for passage in tqdm.tqdm(
+            self.collection_iter,
+            desc="Locating the passages",
+            total=self.collection_size,
+            disable=not progress_bar,
+        ):
+            if passage.passage_id in pids_set:
+                pid2passage[passage.passage_id] = passage
+        return [pid2passage[pid] for pid in pids]
+
     def to_quick_version(
         self,
         split: Split,
