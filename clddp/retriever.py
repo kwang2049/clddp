@@ -27,15 +27,6 @@ from transformers.utils.hub import cached_file
 import torch.distributed as dist
 from clddp.dm import Passage, Query, Separator
 from clddp.utils import dist_gather_tensor, colbert_score, parse_cli, set_logger_format
-from colbert.infra.config.config import ColBERTConfig
-from colbert.modeling.checkpoint import Checkpoint
-from colbert.search.strided_tensor import StridedTensor
-from colbert.modeling.tokenization.query_tokenization import QueryTokenizer
-
-
-class ColBERTCheckpoint(Checkpoint):
-    def save_pretrained(self, path):
-        return super().save(path)
 
 
 MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES[
@@ -241,6 +232,14 @@ class Retriever(torch.nn.Module):
         if config.pooling is Pooling.splade:
             return AutoModelForMaskedLM.from_pretrained(model_name_or_path)
         elif config.similarity_function is SimilarityFunction.maxsim:
+            from colbert.infra.config.config import ColBERTConfig
+            from colbert.modeling.checkpoint import Checkpoint
+            from colbert.modeling.tokenization.query_tokenization import QueryTokenizer
+
+            class ColBERTCheckpoint(Checkpoint):
+                def save_pretrained(self, path):
+                    return super().save(path)
+
             # Load colbert, e.g. colbert-ir/colbertv2.0:
             assert (
                 config.pooling is Pooling.no_pooling
@@ -312,6 +311,8 @@ class Retriever(torch.nn.Module):
     ) -> torch.Tensor:
         if self.config.similarity_function is SimilarityFunction.maxsim:
             # ColBERT
+            from colbert.modeling.checkpoint import Checkpoint
+
             model: Checkpoint = self.query_encoder
             query_texts = [query.text for query in queries]
             qembs = model.queryFromText(queries=query_texts, bsize=batch_size)
@@ -335,6 +336,9 @@ class Retriever(torch.nn.Module):
     ) -> Tuple[torch.Tensor, Optional[torch.BoolTensor]]:
         if self.config.similarity_function is SimilarityFunction.maxsim:
             # ColBERT
+            from colbert.modeling.checkpoint import Checkpoint
+            from colbert.search.strided_tensor import StridedTensor
+
             model: Checkpoint = self.passage_encoder
             texts = [
                 self.maybe_add_prompt(

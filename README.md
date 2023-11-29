@@ -4,7 +4,14 @@ This Python package provides an implementation for constrastive learning with mu
 
 
 ## Installation
-```pip install -U clddp```
+```bash
+pip install -U clddp
+```
+
+If ColBERT is going to be used, please install its package additionally:
+```bash
+pip install git+https://github.com/stanford-futuredata/ColBERT.git@21b460a606bed606e8a7fa105ada36b18e8084ec
+```
 
 
 ## Quick Start

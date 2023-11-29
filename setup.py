@@ -31,7 +31,6 @@ setup(
         "pytrec_eval",
         "sentence-transformers",
         "accelerate",
-        "colbert @ git+https://github.com/stanford-futuredata/ColBERT.git@21b460a606bed606e8a7fa105ada36b18e8084ec#egg=colbert-0.2.0",
         "faiss-cpu",  # Not used. Just for removing some WARNINGs
     ],
 )
