@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import os
-from typing import Dict, Iterable, List, Optional, Type
+from typing import Dict, Iterable, List, Optional, Set, Type
 from clddp.reranker import Reranker, RerankerInputExample
 from more_itertools import chunked
 import torch
@@ -117,6 +117,7 @@ def search_single_device(
     batch_size: int,
     fp16: bool,
     wid: int = 0,
+    pid2allowed_queries: Optional[Dict[str, Set[int]]] = None,
     show_pbar: bool = True,
 ) -> List[RetrievedPassageIDList]:
     retriever.eval()
@@ -137,6 +138,12 @@ def search_single_device(
         sim_mtrx = retriever.similarity_function(
             query_embeddings=qembs, passage_embeddings=pembs
         )
+        if pid2allowed_queries:  # For scoped search:
+            for col, psg in enumerate(batch):
+                allowed_queries = list(pid2allowed_queries.get(psg.passage_id, {}))
+                allowed = sim_mtrx[allowed_queries, col]
+                sim_mtrx[:, col] = NINF
+                sim_mtrx[allowed_queries, col] = allowed
         nentires = search_output.update(
             base=len(pids),
             similarity_matrix=sim_mtrx,
@@ -158,8 +165,24 @@ def search(
     topk: int,
     per_device_eval_batch_size: int,
     fp16: bool,
+    passage_scopes: Optional[
+        List[Set[str]]
+    ] = None,  # For each query, which pids are allowed
 ) -> List[RetrievedPassageIDList]:
     # Doing search:
+    pid2allowed_queries: Optional[Dict[str, Set[int]]] = None
+    if passage_scopes:
+        pid2allowed_queries = {}
+        for query_i, scope in enumerate(
+            tqdm.tqdm(
+                passage_scopes,
+                desc="Processing passage scopes",
+                disable=not is_device_zero(),
+            )
+        ):
+            for pid in scope:
+                pid2allowed_queries.setdefault(pid, set())
+                pid2allowed_queries[pid].add(query_i)
     rank = get_rank()
     split_collection_iter = split_data(data=collection_iter)
     split_collection_size = split_data_size(collection_size)
@@ -172,6 +195,7 @@ def search(
         batch_size=per_device_eval_batch_size,
         fp16=fp16,
         wid=rank,
+        pid2allowed_queries=pid2allowed_queries,
         show_pbar=is_device_zero(),
     )
     all_retrieved = sum(all_gather_object(retrieved), [])
