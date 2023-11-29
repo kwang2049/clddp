@@ -12,7 +12,12 @@ from clddp.dm import (
     Split,
 )
 from clddp.args.distill import RetrievalDistillationArguments
-from clddp.retriever import RetrievalTrainingExample, Retriever, RetrieverConfig
+from clddp.retriever import (
+    RetrievalTrainingExample,
+    Retriever,
+    RetrieverConfig,
+    SimilarityFunction,
+)
 from clddp.utils import is_device_zero, set_logger_format, parse_cli
 from clddp.dataloader import load_dataset
 from clddp.mine import MiningType, load_mined
@@ -26,11 +31,14 @@ class RetrievalDistillationExample(RetrievalTrainingExample):
 
 class RetrieverForDistillation(Retriever):
     def forward(self, examples: List[RetrievalDistillationExample]) -> torch.Tensor:
+        if self.config.similarity_function is SimilarityFunction.maxsim:
+            raise NotImplementedError("Training ColBERT is yet to be supported")
+
         queries = [e.query for e in examples]
         num_candidates = len(examples[0].scores)
         passages = list(chain(*(e.passages for e in examples)))
         qembs = self.encode_queries(queries)  # (bsz, hdim)
-        pembs = self.encode_passages(passages)  # (bsz * num_candidates, hdim)
+        pembs, mask = self.encode_passages(passages)  # (bsz * num_candidates, hdim)
         flattened_pembs = pembs.view(
             len(queries), num_candidates, -1
         )  # (bsz, num_candidates, hdim)

@@ -7,7 +7,7 @@ from itertools import chain
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 import torch
 from sentence_transformers.util import (
     cos_sim,
@@ -22,14 +22,21 @@ from transformers import (
     PreTrainedModel,
     BatchEncoding,
 )
-from transformers.models.auto.modeling_auto import (
-    MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES,
-    _BaseAutoModelClass,
-)
-from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions
+from transformers.models.auto.modeling_auto import MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES
+from transformers.utils.hub import cached_file
 import torch.distributed as dist
 from clddp.dm import Passage, Query, Separator
 from clddp.utils import dist_gather_tensor, colbert_score, parse_cli, set_logger_format
+from colbert.infra.config.config import ColBERTConfig
+from colbert.modeling.checkpoint import Checkpoint
+from colbert.search.strided_tensor import StridedTensor
+from colbert.modeling.tokenization.query_tokenization import QueryTokenizer
+
+
+class ColBERTCheckpoint(Checkpoint):
+    def save_pretrained(self, path):
+        return super().save(path)
+
 
 MODEL_FOR_TEXT_ENCODING_MAPPING_NAMES[
     "mpnet"
@@ -181,7 +188,8 @@ class RetrieverConfig:
     sep: Separator
     pooling: Pooling
     similarity_function: SimilarityFunction
-    max_length: int
+    query_max_length: int  # Very important for ColBERTv2
+    passage_max_length: int
     passage_model_name_or_path: Optional[str] = None
     sim_scale: float = 1.0  # For training, used to enlarge gradient
 
@@ -220,7 +228,8 @@ class Retriever(torch.nn.Module):
         self.sep = Separator(config.sep)
         self.pooling = Pooling(config.pooling)
         self.similarity_function = SimilarityFunction(config.similarity_function)
-        self.max_length = config.max_length
+        self.query_max_length = config.query_max_length
+        self.passage_max_length = config.passage_max_length
         self.set_device("cuda" if torch.cuda.is_available() else "cpu")
         self.query_prompt: Optional[str] = None
         self.passage_prompt: Optional[str] = None
@@ -231,6 +240,26 @@ class Retriever(torch.nn.Module):
     ) -> PreTrainedModel:
         if config.pooling is Pooling.splade:
             return AutoModelForMaskedLM.from_pretrained(model_name_or_path)
+        elif config.similarity_function is SimilarityFunction.maxsim:
+            # Load colbert, e.g. colbert-ir/colbertv2.0:
+            assert (
+                config.pooling is Pooling.no_pooling
+            ), "Please use no_pooling along with maxsim"
+            colbert_meta_path = cached_file(
+                model_name_or_path,
+                "artifact.metadata",
+                _raise_exceptions_for_missing_entries=False,
+                _raise_exceptions_for_connection_errors=False,
+            )
+            local_model_path = os.path.dirname(colbert_meta_path)
+            colbert_config = ColBERTConfig.load_from_checkpoint(local_model_path)
+            colbert_config.doc_maxlen = config.passage_max_length
+            colbert_config.query_maxlen = config.query_max_length
+            model = ColBERTCheckpoint(
+                name=local_model_path, colbert_config=colbert_config
+            )
+            model.query_tokenizer = QueryTokenizer(colbert_config)
+            return model
         else:
             return AutoModelForTextEncoding.from_pretrained(model_name_or_path)
 
@@ -254,7 +283,11 @@ class Retriever(torch.nn.Module):
         self.to(self.device)
 
     def encode(
-        self, encoder: PreTrainedModel, texts: List[str], batch_size: int
+        self,
+        encoder: PreTrainedModel,
+        texts: List[str],
+        max_length: int,
+        batch_size: int,
     ) -> torch.Tensor:
         encoded_list: List[torch.Tensor] = []
         for b in range(0, len(texts), batch_size):
@@ -264,7 +297,7 @@ class Retriever(torch.nn.Module):
                 padding=True,
                 truncation="longest_first",
                 return_tensors="pt",
-                max_length=self.max_length,
+                max_length=max_length,
             ).to(self.device)
             token_embeddings: torch.Tensor = encoder(**tokenized, return_dict=False)[0]
             pooled = self.pooling(
@@ -277,37 +310,77 @@ class Retriever(torch.nn.Module):
     def encode_queries(
         self, queries: List[Query], batch_size: int = 16
     ) -> torch.Tensor:
-        return self.encode(
-            encoder=self.query_encoder,
-            texts=[
-                self.maybe_add_prompt(prompt=self.query_prompt, input_text=query.text)
-                for query in queries
-            ],
-            batch_size=batch_size,
-        )
+        if self.config.similarity_function is SimilarityFunction.maxsim:
+            # ColBERT
+            model: Checkpoint = self.query_encoder
+            query_texts = [query.text for query in queries]
+            qembs = model.queryFromText(queries=query_texts, bsize=batch_size)
+            return qembs
+        else:
+            # Simple single-vector search
+            return self.encode(
+                encoder=self.query_encoder,
+                texts=[
+                    self.maybe_add_prompt(
+                        prompt=self.query_prompt, input_text=query.text
+                    )
+                    for query in queries
+                ],
+                max_length=self.config.query_max_length,
+                batch_size=batch_size,
+            )
 
     def encode_passages(
         self, passages: List[Passage], batch_size: int = 16
-    ) -> torch.Tensor:
-        return self.encode(
-            encoder=self.passage_encoder,
-            texts=[
+    ) -> Tuple[torch.Tensor, Optional[torch.BoolTensor]]:
+        if self.config.similarity_function is SimilarityFunction.maxsim:
+            # ColBERT
+            model: Checkpoint = self.passage_encoder
+            texts = [
                 self.maybe_add_prompt(
                     prompt=self.passage_prompt,
                     input_text=self.sep.concat([passage.title, passage.text]),
                 )
                 for passage in passages
-            ],
-            batch_size=batch_size,
-        )
+            ]
+            passage_embs, passage_lengths = model.docFromText(
+                docs=texts,
+                bsize=batch_size,
+                keep_dims="flatten",
+                showprogress=False,
+            )
+            with torch.cuda.device(self.device):
+                passage_embs, mask = StridedTensor(
+                    passage_embs, passage_lengths, use_gpu=True
+                ).as_padded_tensor()  # (nchunks, chunk_length, hdim), (nchunks, chunk_lenght, 1)
+            return passage_embs, mask
+        else:
+            # Simple single-vector search
+            mask = None
+            passage_embs = self.encode(
+                encoder=self.passage_encoder,
+                texts=[
+                    self.maybe_add_prompt(
+                        prompt=self.passage_prompt,
+                        input_text=self.sep.concat([passage.title, passage.text]),
+                    )
+                    for passage in passages
+                ],
+                max_length=self.config.passage_max_length,
+                batch_size=batch_size,
+            )
+            return passage_embs, mask
 
     def forward(
         self, examples: List[RetrievalTrainingExample]
     ) -> Dict[str, torch.Tensor]:
+        if self.similarity_function is SimilarityFunction.maxsim:
+            raise NotImplementedError("Training ColBERT is yet to be supported")
+
         queries = [e.query for e in examples]
         passages = list(chain(*(e.passages for e in examples)))
         qembs = self.encode_queries(queries)  # (bsz, hdim)
-        pembs = self.encode_passages(passages)  # (bsz * (1 + nnegs), hdim)
+        pembs, mask = self.encode_passages(passages)  # (bsz * (1 + nnegs), hdim)
         if dist.is_initialized():
             # Key in multi-gpu training for contrastive learning:
             # https://amsword.medium.com/gradient-backpropagation-with-torch-distributed-all-gather-9f3941a381f8

@@ -134,9 +134,11 @@ def search_single_device(
     pbar = tqdm.tqdm(total=collection_size, desc="Searching", disable=not show_pbar)
     for batch in batches:
         with torch.cuda.amp.autocast(enabled=fp16):
-            pembs = retriever.encode_passages(passages=batch, batch_size=batch_size)
+            pembs, mask = retriever.encode_passages(
+                passages=batch, batch_size=batch_size
+            )
         sim_mtrx = retriever.similarity_function(
-            query_embeddings=qembs, passage_embeddings=pembs
+            query_embeddings=qembs, passage_embeddings=pembs, passage_mask=mask
         )
         if pid2allowed_queries:  # For scoped search:
             for col, psg in enumerate(batch):
