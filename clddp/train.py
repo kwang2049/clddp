@@ -210,7 +210,8 @@ def main(args: Optional[RetrievalTrainingArguments] = None) -> Retriever:
         sep=args.sep,
         pooling=args.pooling,
         similarity_function=args.similarity_function,
-        max_length=args.max_length,
+        query_max_length=args.query_max_length,
+        passage_max_length=args.passage_max_length,
         sim_scale=args.sim_scale,
     )
     retriever = Retriever(config)

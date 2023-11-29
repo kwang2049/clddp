@@ -7,7 +7,8 @@ export CLI_ARGS="
 --sep=blank
 --pooling=cls
 --similarity_function=dot_product
---max_length=350
+--query_max_length=350
+--passage_max_length=350
 --sim_scale=1.0
 "
 python -m clddp.retriever $CLI_ARGS
@@ -49,7 +50,8 @@ export CLI_ARGS="
 --sep=blank
 --pooling=cls
 --similarity_function=dot_product
---max_length=350
+--query_max_length=350
+--passage_max_length=350
 --sim_scale=1.0
 --fp16=True
 --train_data=$DATASET_PATH

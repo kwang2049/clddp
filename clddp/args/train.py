@@ -26,7 +26,8 @@ class RetrievalTrainingArguments(
     sep: Separator = Separator.blank
     pooling: Pooling = Pooling.cls
     similarity_function: SimilarityFunction = SimilarityFunction.dot_product
-    max_length: int = 350
+    query_max_length: int = 350
+    passage_max_length: int = 350
     sim_scale: float = 1.0
     fp16: bool = True
 
