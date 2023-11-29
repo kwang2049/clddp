@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="clddp",
-    version="0.0.6",
+    version="0.0.7",
     author="Kexin Wang",
     author_email="kexin.wang.2049@gmail.com",
     description="A package for training and doing inference with contrastive learning with multiple GPUs (Pytorch-DDP).",
