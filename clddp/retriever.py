@@ -18,6 +18,7 @@ from sentence_transformers.util import (
 from transformers import (
     AutoModelForTextEncoding,
     AutoModelForMaskedLM,
+    AutoModel,
     AutoTokenizer,
     PreTrainedModel,
     BatchEncoding,
@@ -244,6 +245,7 @@ class Retriever(torch.nn.Module):
             assert (
                 config.pooling is Pooling.no_pooling
             ), "Please use no_pooling along with maxsim"
+            AutoModel.from_pretrained(model_name_or_path)  # For downloading the weights
             colbert_meta_path = cached_file(
                 model_name_or_path,
                 "artifact.metadata",
