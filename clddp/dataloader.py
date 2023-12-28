@@ -95,7 +95,7 @@ class BEIRDataloader(BaseDataLoader):
                     jpsg = JudgedPassage(
                         query=qid2query[qid], passage=pid2psg[pid], judgement=rel
                     )
-                    if rel:
+                    if rel > 0:
                         positives.append(jpsg)
                     else:
                         negatives.append(jpsg)

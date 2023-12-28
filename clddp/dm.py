@@ -60,7 +60,7 @@ class LabeledQuery:
 
     def __post_init__(self):
         assert all(jpsg.judgement > 0 for jpsg in self.positives)
-        assert all(jpsg.judgement == 0 for jpsg in self.negatives)
+        assert all(jpsg.judgement <= 0 for jpsg in self.negatives)
         assert all(
             jpsg.query.query_id == self.query.query_id
             for jpsg in self.positives + self.negatives
@@ -77,7 +77,7 @@ class LabeledQuery:
         """Build the qrels for trec_eval https://github.com/cvangysel/pytrec_eval."""
         qrels = {}
         for lq in labeled_queries:
-            for jpsg in lq.positives:  # Ingore queries without positives
+            for jpsg in lq.positives + lq.negatives:  # Ingore queries without positives
                 qrels.setdefault(jpsg.query.query_id, {})
                 qrels[jpsg.query.query_id][jpsg.passage.passage_id] = jpsg.judgement
         return qrels
