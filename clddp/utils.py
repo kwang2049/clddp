@@ -164,9 +164,12 @@ def initialize_ddp(ddp_timeout: int = 360000) -> None:
 
 def get_commit_hash() -> str:
     """Return the HEAD commit hash."""
-    repo = git.Repo(search_parent_directories=True)
-    sha = repo.head.object.hexsha
-    return sha
+    try:
+        repo = git.Repo(search_parent_directories=True)
+        sha = repo.head.object.hexsha
+        return sha
+    except git.InvalidGitRepositoryError:
+        return "none"
 
 
 def parse_cli(arguments_class: Type[OBJ_TYPE]) -> OBJ_TYPE:
